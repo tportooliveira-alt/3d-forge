@@ -12,3 +12,4 @@ rtree
 torch
 torchvision
 timm
+firebase-admin

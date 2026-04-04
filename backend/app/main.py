@@ -1,11 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import upload, convert, repair, process, chat, face3d, export, estimate, viewer, analyze, admin
+from contextlib import asynccontextmanager
+from app.routes import upload, convert, repair, process, chat, face3d, export, estimate, viewer, analyze, admin, jobs
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Inicializa Firebase no startup."""
+    from app.services.firebase_service import init_firebase
+    init_firebase()
+    yield
 
 app = FastAPI(
     title="3D FORGE API",
     description="Pipeline completo: foto/modelo 3D → conversão → reparo → exportação → estimativa de impressão",
-    version="2.0.0",
+    version="2.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -26,6 +36,7 @@ app.include_router(chat.router, prefix="/api", tags=["Chat"])
 app.include_router(face3d.router, prefix="/api", tags=["Face3D"])
 app.include_router(viewer.router, prefix="/api", tags=["Viewer"])
 app.include_router(admin.router, prefix="/api", tags=["Admin"])
+app.include_router(jobs.router, prefix="/api", tags=["Jobs/Firebase"])
 
 
 @app.get("/")
@@ -33,7 +44,8 @@ async def root():
     return {
         "status": "online",
         "api": "3D FORGE",
-        "version": "2.0.0",
+        "version": "2.1.0",
+        "database": "Firebase Firestore",
         "rotas": {
             "upload": "POST /api/upload",
             "convert": "POST /api/convert",
@@ -43,9 +55,9 @@ async def root():
             "estimate": "POST /api/estimate?printer=ender3&filament=pla",
             "face3d": "POST /api/face3d",
             "chat": "POST /api/chat",
+            "jobs": "GET /api/jobs",
+            "stats": "GET /api/stats",
             "viewer": "GET /api/view/{job_id}",
-            "formats": "GET /api/formats",
-            "printers": "GET /api/printers",
             "docs": "GET /docs",
         },
     }
