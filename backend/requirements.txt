@@ -1,0 +1,14 @@
+fastapi==0.115.0
+uvicorn==0.30.0
+python-multipart==0.0.9
+pydantic==2.9.0
+trimesh==4.4.0
+numpy
+mediapipe==0.10.14
+opencv-python-headless
+Pillow
+scipy
+rtree
+torch
+torchvision
+timm
