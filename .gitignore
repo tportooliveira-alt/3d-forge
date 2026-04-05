@@ -12,3 +12,4 @@ outputs/
 .DS_Store
 midas_lib/
 hub/
+serviceAccountKey.json
