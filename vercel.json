@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "framework": null,
+  "installCommand": "echo 'skip'",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://forge-3d-c12ff.web.app/api/$1"
+    }
+  ]
+}
