@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const API = ""; // proxy via Vite em dev, mesma origin em prod
+const API = import.meta.env.VITE_API_URL || ""; // Vercel: set VITE_API_URL, local: proxy via Vite
 
 // ─── THEME ───
 const T = {
