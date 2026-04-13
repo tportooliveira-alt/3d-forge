@@ -3,6 +3,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from app.services.file_service import validate_extension, save_upload
 from app.services.convert_service import convert_to_stl
+from app.services.firebase_service import save_job
 from pathlib import Path
 
 router = APIRouter()
@@ -20,6 +21,7 @@ async def convert(file: UploadFile = File(...)):
     if result["status"] == "error":
         raise HTTPException(422, result["message"])
 
+    save_job(saved["job_id"], {**result, "action": "convert", "filename": file.filename})
     return result
 
 

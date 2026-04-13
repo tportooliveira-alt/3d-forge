@@ -7,7 +7,8 @@ router = APIRouter()
 @router.get("/jobs")
 async def jobs(limit: int = Query(20, description="Máximo de jobs")):
     """Lista jobs recentes."""
-    return {"jobs": list_jobs(limit)}
+    job_list = list_jobs(limit)
+    return {"total": len(job_list), "jobs": job_list}
 
 
 @router.get("/jobs/{job_id}")

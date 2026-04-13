@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.file_service import save_upload
 from app.services.repair_service import repair_mesh
+from app.services.firebase_service import save_job
 
 router = APIRouter()
 
@@ -21,4 +22,5 @@ async def repair(file: UploadFile = File(...)):
     if result["status"] == "error":
         raise HTTPException(422, result["message"])
 
+    save_job(saved["job_id"], {**result, "action": "repair", "filename": file.filename})
     return result

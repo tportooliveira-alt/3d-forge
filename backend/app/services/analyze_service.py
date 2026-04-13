@@ -5,7 +5,25 @@ Análise completa de um modelo 3D: geometria, printability, problemas.
 
 import trimesh
 import numpy as np
+import math
 from pathlib import Path
+
+
+def _safe(val):
+    """Converte NaN/Inf para None para serialização JSON segura."""
+    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+        return None
+    return val
+
+
+def _safe_round(val, digits=2):
+    try:
+        v = float(val)
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return round(v, digits)
+    except Exception:
+        return None
 
 
 def analyze_mesh(file_path: str) -> dict:
@@ -46,26 +64,35 @@ def analyze_mesh(file_path: str) -> dict:
 
     printable = len(problems) == 0
 
+    try:
+        centro = [_safe_round(x) for x in mesh.center_mass]
+    except Exception:
+        centro = [None, None, None]
+
     result = {
         "status": "done",
         "geometria": {
             "vertices": len(mesh.vertices),
             "faces": len(mesh.faces),
             "edges": len(mesh.edges_unique),
-            "dimensoes_mm": {"x": round(float(dims[0]), 2), "y": round(float(dims[1]), 2), "z": round(float(dims[2]), 2)},
-            "bounding_box_mm3": round(float(np.prod(dims)), 2),
+            "dimensoes_mm": {
+                "x": _safe_round(dims[0]),
+                "y": _safe_round(dims[1]),
+                "z": _safe_round(dims[2]),
+            },
+            "bounding_box_mm3": _safe_round(float(np.prod(dims))),
         },
         "topologia": {
-            "watertight": mesh.is_watertight,
-            "winding_consistent": mesh.is_winding_consistent,
+            "watertight": bool(mesh.is_watertight),
+            "winding_consistent": bool(mesh.is_winding_consistent),
             "euler_number": int(mesh.euler_number),
             "bodies": len(mesh.split()),
         },
         "metricas": {
-            "area_superficie_mm2": round(float(mesh.area), 2),
-            "volume_mm3": round(float(abs(mesh.volume)), 2) if mesh.is_watertight else None,
-            "volume_cm3": round(float(abs(mesh.volume)) / 1000, 3) if mesh.is_watertight else None,
-            "centro_massa": [round(float(x), 2) for x in mesh.center_mass],
+            "area_superficie_mm2": _safe_round(mesh.area),
+            "volume_mm3": _safe_round(abs(mesh.volume)) if mesh.is_watertight else None,
+            "volume_cm3": _safe_round(abs(mesh.volume) / 1000, 3) if mesh.is_watertight else None,
+            "centro_massa": centro,
         },
         "printability": {
             "printable": printable,

@@ -54,11 +54,22 @@ def repair_mesh(job_id: str, stl_path: str) -> dict:
         "watertight": mesh.is_watertight,
     }
 
+    # Score de qualidade pós-reparo (0-100)
+    score = 100
+    if not mesh.is_watertight:
+        score -= 40
+    if not mesh.is_winding_consistent:
+        score -= 20
+    degen = int((mesh.area_faces < 1e-10).sum())
+    if degen > 0:
+        score -= min(30, degen)
+
     return {
         "job_id": job_id,
         "status": "done",
         "output": str(output_path),
-        "watertight": mesh.is_watertight,
+        "watertight": bool(mesh.is_watertight),
+        "score": max(0, score),
         "before": before,
         "after": after,
     }
