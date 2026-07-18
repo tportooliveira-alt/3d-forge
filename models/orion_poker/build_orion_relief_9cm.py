@@ -41,19 +41,19 @@ CELL = 0.30            # resolução da malha (mm por célula)
 im = Image.open(IMG).convert("RGB")
 arr = np.asarray(im).astype(float)
 
-# marcos da FACE FRONTAL na foto: o pico do topo, as duas dobras onde a borda
-# superior encontra as laterais, e a ponta inferior (marcados sobre a imagem)
-p_left = (265, 200)     # dobra superior esquerda
-p_right = (1305, 108)   # dobra superior direita
-p_top = (770, 55)       # pico do topo
-p_tip = (950, 898)      # ponta inferior da face frontal
+# marcos da FACE FRONTAL na foto (IMG_2256): o pico do topo, as duas dobras
+# onde a borda superior encontra as laterais, e a ponta inferior
+p_left = (203, 1168)    # dobra superior esquerda
+p_right = (922, 1088)   # dobra superior direita
+p_top = (525, 1015)     # pico do topo
+p_tip = (608, 1612)     # ponta inferior da face frontal
 
-# alvo com as PROPORÇÕES DA PRÓPRIA FOTO: as dobras ficam a ~12% da altura e
+# alvo com as PROPORÇÕES DA PRÓPRIA FOTO: as dobras ficam a ~14% da altura e
 # a ~80% da largura máxima (o escudo tem bojo lateral abaixo das dobras)
-TOTAL_H = TARGET_W * 0.72          # proporção do render (~90 x 65)
+TOTAL_H = TARGET_W * 0.78          # proporção do render (~90 x 70)
 Y_TOP = TOTAL_H * 0.40
 Y_TIP = Y_TOP - TOTAL_H
-Y_KINK = Y_TOP - 0.117 * TOTAL_H
+Y_KINK = Y_TOP - 0.141 * TOTAL_H
 X_KINK = 0.80 * TARGET_W / 2
 DST = {
     "left": (-X_KINK, Y_KINK),
