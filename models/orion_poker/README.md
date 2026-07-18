@@ -4,13 +4,18 @@ Redesign moderno do logo **ÓRION POKER** (base: `Paulo_Poker_02alt.pdf`) como p
 física em relevo multicolor, com a estrela em destaque como ponto mais alto da peça
 e o nome/escudo "saindo" da base em camadas.
 
-## Constelação real
+## Design (referência aprovada)
 
-A constelação usa as **posições reais das estrelas de Órion** (AR/Dec J2000),
-projetadas com escala uniforme — as proporções são fiéis às distâncias angulares
-no céu (célebre ampulheta ~2× mais alta que larga). O tamanho de cada estrela é
-proporcional ao brilho real (magnitude aparente), incluindo as Três Marias
-compactas e a espada (Hatysa). A **estrela em destaque é Rigel**, a mais
+Layout do escudo grande baseado no render de referência: escudo **largo**
+(mais largo que alto) com moldura dupla dourada, céu com campo de
+microestrelas, ÓRION em letras douradas grandes passando na frente do céu,
+naipes com aro dourado e chevron na base.
+
+As estrelas têm **estilo astrofotografia** (núcleo redondo + espículos de
+difração finos, cruz principal + diagonal). A constelação segue o arranjo e a
+ordem reais das estrelas de Órion (AR/Dec J2000), com abertura horizontal
+estética para casar com a referência; o tamanho de cada estrela é proporcional
+ao brilho real (magnitude aparente). A **estrela em destaque é Rigel**, a mais
 brilhante de Órion (mag 0,13) — em ouro e no ponto mais alto da peça.
 
 Estrelas: Betelgeuse, Bellatrix, Meissa, Alnitak, Alnilam, Mintaka, Hatysa,
@@ -21,7 +26,7 @@ Saiph e Rigel.
 | Modelo | Script | Dimensões | Saída |
 |---|---|---|---|
 | Cartão 9×5 (formato empresa) | `build_orion_card_9x5.py` | **90 × 50 × 10 mm** | `output_9x5/` |
-| Escudo grande (parede/mesa) | `build_orion_shield.py` | 110 × 109 × 6,2 mm | `output/` |
+| Escudo grande (parede/mesa) | `build_orion_shield.py` | 120 × 86,5 × 6,2 mm | `output/` |
 
 ## Como imprimir (Bambu Studio)
 

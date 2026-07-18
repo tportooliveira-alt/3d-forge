@@ -161,9 +161,9 @@ EDGES = [
     ("alnitak", "saiph"), ("mintaka", "rigel"), ("saiph", "rigel"),
 ]
 sminx, sminy, smaxx, smaxy = sh_inner.bounds
-CONST_H = 20.0                                          # altura da constelação no escudo
-WIDEN_X = 1.25                                          # abertura horizontal estética
-CONST_C = (SH_CX - 1.2, (sminy + smaxy) / 2 + 2.5)      # centro no escudo
+CONST_H = 18.5                                          # altura da constelação no escudo
+WIDEN_X = 1.55                                          # abertura horizontal estética
+CONST_C = (SH_CX - 1.0, (sminy + smaxy) / 2 + 2.5)      # centro no escudo
 
 _raw = {n: (-(ra * 15.0), dec) for n, (ra, dec, _m) in ORION.items()}
 _xs, _ys = zip(*_raw.values())
