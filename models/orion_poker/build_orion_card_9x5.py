@@ -89,6 +89,17 @@ def sparkle(cx, cy, r, ratio=0.22, points=4, rot=0.0):
     return Polygon(np.c_[cx + rad * np.cos(ang), cy + rad * np.sin(ang)])
 
 
+def flare_star(cx, cy, r):
+    """Estrela realista estilo astrofotografia: núcleo redondo + espículos de
+    difração longos e finos (cruz principal + cruz diagonal menor)."""
+    from shapely.geometry import Point
+
+    core = Point(cx, cy).buffer(max(0.55, r * 0.30), resolution=24)
+    spikes = sparkle(cx, cy, r, ratio=0.115)
+    diag = sparkle(cx, cy, r * 0.58, ratio=0.16, rot=np.pi / 4)
+    return unary_union([core, spikes, diag])
+
+
 def line_strip(pts, width):
     return LineString(pts).buffer(width / 2, cap_style=1, join_style=1)
 
@@ -108,18 +119,19 @@ card_rim = card.buffer(-1.2).difference(card.buffer(-2.8))
 
 # ---------------------------------------------------------------- escudo (esquerda)
 def shield_outline(width):
+    """Proporções do logo original: escudo equilibrado, pouco mais alto que largo."""
     hw = width / 2
-    top_y, peak_y = 0.60 * width, 0.68 * width
-    right = bezier(np.array([hw, top_y]), np.array([hw + 0.02 * width, -0.10 * width]), np.array([hw * 0.62, -0.42 * width]))
-    tip = bezier(np.array([hw * 0.62, -0.42 * width]), np.array([hw * 0.30, -0.62 * width]), np.array([0.0, -0.72 * width]))
+    top_y, peak_y = 0.50 * width, 0.57 * width
+    right = bezier(np.array([hw, top_y]), np.array([hw + 0.02 * width, -0.08 * width]), np.array([hw * 0.66, -0.36 * width]))
+    tip = bezier(np.array([hw * 0.66, -0.36 * width]), np.array([hw * 0.32, -0.54 * width]), np.array([0.0, -0.62 * width]))
     upper = [(-hw, top_y), (0.0, peak_y), (hw, top_y)]
     right_side = list(map(tuple, np.vstack([right, tip])))
     left_side = [(-x, y) for x, y in right_side[::-1]]
     return Polygon(upper + right_side + left_side[1:]).buffer(0)
 
 
-SH_W = 30.0                                  # largura do escudo
-SH_CX, SH_CY = -27.0, 0.0                    # posição no cartão
+SH_W = 32.0                                  # largura do escudo
+SH_CX, SH_CY = -26.0, 0.0                    # posição no cartão
 shield_raw = shield_outline(SH_W)
 minx, miny, maxx, maxy = shield_raw.bounds
 shield = shp_translate(shield_raw, xoff=SH_CX, yoff=SH_CY - (miny + maxy) / 2)
@@ -149,42 +161,51 @@ EDGES = [
     ("alnitak", "saiph"), ("mintaka", "rigel"), ("saiph", "rigel"),
 ]
 sminx, sminy, smaxx, smaxy = sh_inner.bounds
-CONST_H = 22.0                                          # altura da constelação no escudo
-CONST_C = (SH_CX, (sminy + smaxy) / 2 + 2.0)            # centro no escudo
+CONST_H = 20.0                                          # altura da constelação no escudo
+WIDEN_X = 1.25                                          # abertura horizontal estética
+CONST_C = (SH_CX - 1.2, (sminy + smaxy) / 2 + 2.5)      # centro no escudo
 
 _raw = {n: (-(ra * 15.0), dec) for n, (ra, dec, _m) in ORION.items()}
 _xs, _ys = zip(*_raw.values())
-_s = CONST_H / (max(_ys) - min(_ys))                    # mesma escala nos dois eixos
+_s = CONST_H / (max(_ys) - min(_ys))
 _cx, _cy = (max(_xs) + min(_xs)) / 2, (max(_ys) + min(_ys)) / 2
 
 
 def cpos(name):
     x, y = _raw[name]
-    return (CONST_C[0] + (x - _cx) * _s, CONST_C[1] + (y - _cy) * _s)
+    return (CONST_C[0] + (x - _cx) * _s * WIDEN_X, CONST_C[1] + (y - _cy) * _s)
 
 
 BELT = ("alnitak", "alnilam", "mintaka")
 
 
-def star_r(name, mag, base=2.2, slope=0.4, rmin=0.9):
+def star_r(name, mag, base=3.1, slope=0.55, rmin=1.3):
     """Raio proporcional ao brilho real (magnitude menor = estrela maior).
-    As três Marias ficam compactas: na escala real distam ~1,5 mm entre si."""
+    As três Marias ficam compactas como no céu real."""
     r = max(rmin, base - slope * mag)
-    return min(r, 1.0) if name in BELT else r
+    return min(r, 1.5) if name in BELT else r
 
 
 small_stars = unary_union(
-    [sparkle(*cpos(n), r=star_r(n, m), ratio=0.34) for n, (_ra, _dec, m) in ORION.items() if n != "rigel"]
+    [flare_star(*cpos(n), r=star_r(n, m)) for n, (_ra, _dec, m) in ORION.items() if n != "rigel"]
 )
 
 # a ESTRELA EM DESTAQUE — Rigel, a mais brilhante de Órion (mag 0.13):
-# em ouro, ponto mais alto da peça (10 mm), na posição real
-hero_xy = cpos("rigel")
-hero = sparkle(*hero_xy, r=4.4, ratio=0.26).union(sparkle(*hero_xy, r=2.6, ratio=0.34, rot=np.pi / 4))
+# em ouro, ponto mais alto da peça (10 mm), com brilho realista
+from shapely.geometry import Point
 
-# linhas por baixo recortadas ao redor das estrelas (sem sólidos sobrepostos)
-const_lines = unary_union([line_strip([cpos(a), cpos(b)], 0.85) for a, b in EDGES])
-const_lines = const_lines.difference(small_stars.buffer(0.12))
+hero_xy = cpos("rigel")
+hero = unary_union([
+    Point(hero_xy).buffer(1.4, resolution=32),
+    sparkle(*hero_xy, r=4.2, ratio=0.11),
+    sparkle(*hero_xy, r=2.6, ratio=0.15, rot=np.pi / 4),
+])
+
+# linhas FINAS por baixo, recortadas ao redor das estrelas (sem sobreposição);
+# ao redor de Rigel o recorte é circular, para um acabamento limpo
+const_lines = unary_union([line_strip([cpos(a), cpos(b)], 0.55) for a, b in EDGES])
+const_lines = const_lines.difference(small_stars.buffer(0.1))
+const_lines = const_lines.difference(Point(hero_xy).buffer(3.8))
 
 sh_clip = sh_inner.buffer(-0.3)
 
@@ -204,7 +225,7 @@ club = center_at(text_poly("♣", SANS_BOLD, 12), TX + 13.5, suit_y, target_h=su
 
 # brilhos decorativos no canto superior direito
 DECOR = [(38.5, 19.5, 2.0), (33.0, 15.0, 1.3), (40.0, 12.5, 1.1), (-6.5, 18.5, 1.4)]
-decor_stars = unary_union([sparkle(x, y, r, ratio=0.32) for x, y, r in DECOR])
+decor_stars = unary_union([flare_star(x, y, r) for x, y, r in DECOR])
 
 # linha dourada sob os naipes
 underline = Polygon([(TX - 24, -20.6), (TX + 24, -20.6), (TX + 20, -22.0), (TX - 20, -22.0)])
@@ -220,8 +241,8 @@ parts = [
     ("base_cartao_preto", card, 0.0, BASE_Z, BLACK),
     ("moldura_ouro", card_rim, BASE_Z, RIM_Z, GOLD),
     ("escudo_borda_ouro", cc(sh_rim), BASE_Z, RIM_Z + 0.2, GOLD),
-    ("constelacao_linhas_branco", sh_clip.intersection(const_lines.difference(hero.buffer(1.6))), BASE_Z, LINE_Z, WHITE),
-    ("estrelas_pequenas_branco", sh_clip.intersection(small_stars.difference(hero.buffer(1.2))), BASE_Z, STAR_Z, WHITE),
+    ("constelacao_linhas_branco", sh_clip.intersection(const_lines), BASE_Z, LINE_Z, WHITE),
+    ("estrelas_pequenas_branco", sh_clip.intersection(small_stars.difference(hero.buffer(0.3))), BASE_Z, STAR_Z, WHITE),
     ("estrela_soares_destaque_ouro", sh_clip.intersection(hero), BASE_Z, HERO_Z, GOLD),
     ("nome_orion_ouro", cc(name_txt), BASE_Z, NAME_Z, GOLD),
     ("poker_ouro", cc(poker_full), BASE_Z, SUB_Z, GOLD),

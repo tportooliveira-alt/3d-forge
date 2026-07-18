@@ -95,6 +95,17 @@ def sparkle(cx, cy, r, ratio=0.22, points=4, rot=0.0):
     return Polygon(pts)
 
 
+def flare_star(cx, cy, r):
+    """Estrela realista estilo astrofotografia: núcleo redondo + espículos de
+    difração longos e finos (cruz principal + cruz diagonal menor)."""
+    from shapely.geometry import Point
+
+    core = Point(cx, cy).buffer(max(0.75, r * 0.30), resolution=24)
+    spikes = sparkle(cx, cy, r, ratio=0.115)
+    diag = sparkle(cx, cy, r * 0.58, ratio=0.16, rot=np.pi / 4)
+    return unary_union([core, spikes, diag])
+
+
 def line_strip(pts, width):
     from shapely.geometry import LineString
 
@@ -152,8 +163,9 @@ EDGES = [
     ("alnilam", "hatysa"),                              # espada de Órion
     ("alnitak", "saiph"), ("mintaka", "rigel"), ("saiph", "rigel"),
 ]
-CONST_H = 36.0                                          # altura da constelação
-CONST_C = (-4.0, 27.0)                                  # centro no céu do escudo
+CONST_H = 34.0                                          # altura da constelação
+WIDEN_X = 1.25                                          # abertura horizontal estética
+CONST_C = (-6.0, 27.0)                                  # centro no céu do escudo
 
 _raw = {n: (-(ra * 15.0), dec) for n, (ra, dec, _m) in ORION.items()}
 _xs, _ys = zip(*_raw.values())
@@ -163,37 +175,43 @@ _ccx, _ccy = (max(_xs) + min(_xs)) / 2, (max(_ys) + min(_ys)) / 2
 
 def cpos(name):
     x, y = _raw[name]
-    return (CONST_C[0] + (x - _ccx) * _s, CONST_C[1] + (y - _ccy) * _s)
+    return (CONST_C[0] + (x - _ccx) * _s * WIDEN_X, CONST_C[1] + (y - _ccy) * _s)
 
 
 BELT = ("alnitak", "alnilam", "mintaka")
 
 
-def star_r(name, mag, base=3.4, slope=0.62, rmin=1.3):
+def star_r(name, mag, base=4.0, slope=0.7, rmin=1.6):
     """Raio proporcional ao brilho real (magnitude menor = estrela maior).
     As Três Marias ficam compactas: na escala real distam ~2,5 mm entre si."""
     r = max(rmin, base - slope * mag)
-    return min(r, 1.6) if name in BELT else r
+    return min(r, 1.9) if name in BELT else r
 
 
 small_stars = unary_union(
-    [sparkle(*cpos(n), r=star_r(n, m), ratio=0.34) for n, (_ra, _dec, m) in ORION.items() if n != "rigel"]
+    [flare_star(*cpos(n), r=star_r(n, m)) for n, (_ra, _dec, m) in ORION.items() if n != "rigel"]
 )
 
 # brilhos decorativos espalhados no céu
-DECOR = [(-34, 18, 2.2), (-40, 32, 1.6), (36, 12, 2.0), (-26, 44, 1.5), (24, 47, 1.4), (32, 34, 2.4)]
-decor_stars = unary_union([sparkle(x, y, r, ratio=0.32) for x, y, r in DECOR])
+DECOR = [(-34, 18, 2.6), (-40, 32, 1.9), (36, 12, 2.4), (-26, 44, 1.8), (24, 47, 1.7), (33, 33, 3.0)]
+decor_stars = unary_union([flare_star(x, y, r) for x, y, r in DECOR])
 
 # a ESTRELA EM DESTAQUE — Rigel, a mais brilhante de Órion (mag 0.13):
 # em ouro, ponto mais alto da peça, na posição real
-hero_xy = cpos("rigel")
-hero = sparkle(*hero_xy, r=7.0, ratio=0.26, points=4).union(
-    sparkle(*hero_xy, r=4.2, ratio=0.34, points=4, rot=np.pi / 4)
-)
+from shapely.geometry import Point
 
-# linhas por baixo recortadas ao redor das estrelas (sem sólidos sobrepostos)
-const_lines = unary_union([line_strip([cpos(a), cpos(b)], 1.3) for a, b in EDGES])
+hero_xy = cpos("rigel")
+hero = unary_union([
+    Point(hero_xy).buffer(2.3, resolution=32),
+    sparkle(*hero_xy, r=7.0, ratio=0.11),
+    sparkle(*hero_xy, r=4.3, ratio=0.15, rot=np.pi / 4),
+])
+
+# linhas FINAS por baixo, recortadas ao redor das estrelas (sem sobreposição);
+# ao redor de Rigel o recorte é circular, para um acabamento limpo
+const_lines = unary_union([line_strip([cpos(a), cpos(b)], 0.9) for a, b in EDGES])
 const_lines = const_lines.difference(small_stars.buffer(0.15))
+const_lines = const_lines.difference(Point(hero_xy).buffer(6.2))
 
 # ---------------------------------------------------------------- textos
 name_txt = center_at(text_poly("ÓRION", SERIF_BOLD, 20), 0, -12.5, target_w=78)
@@ -226,8 +244,8 @@ parts = [
     # (nome, geometria, z0, altura, cor RGBA)
     ("base_escudo_preto", shield, 0.0, BASE_Z, BLACK),
     ("borda_ouro", rim, BASE_Z, RIM_Z, GOLD),
-    ("constelacao_linhas_branco", clipped(const_lines.difference(hero.buffer(2.2))), BASE_Z, LINE_Z, WHITE),
-    ("estrelas_pequenas_branco", clipped(small_stars.difference(hero.buffer(1.6))), BASE_Z, STAR_Z, WHITE),
+    ("constelacao_linhas_branco", clipped(const_lines), BASE_Z, LINE_Z, WHITE),
+    ("estrelas_pequenas_branco", clipped(small_stars.difference(hero.buffer(0.4))), BASE_Z, STAR_Z, WHITE),
     ("estrelas_decor_ouro", clipped(decor_stars), BASE_Z, STAR_Z, GOLD),
     ("estrela_soares_destaque_ouro", clipped(hero), BASE_Z, HERO_Z, GOLD),
     ("nome_orion_ouro", clipped(name_txt), BASE_Z, NAME_Z, GOLD),
