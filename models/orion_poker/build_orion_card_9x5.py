@@ -126,36 +126,65 @@ shield = shp_translate(shield_raw, xoff=SH_CX, yoff=SH_CY - (miny + maxy) / 2)
 sh_rim = shield.difference(shield.buffer(-1.6))
 sh_inner = shield.buffer(-1.6)
 
-# constelação de Órion dentro do escudo
-C = {
-    "meissa": (0.50, 1.00), "betelgeuse": (0.22, 0.78), "bellatrix": (0.78, 0.80),
-    "alnitak": (0.40, 0.44), "alnilam": (0.50, 0.41), "mintaka": (0.60, 0.38),
-    "saiph": (0.28, 0.04), "rigel": (0.74, 0.00),
+# constelação de Órion com posições REAIS: (AR em horas, Dec em graus, magnitude)
+# Fonte: coordenadas J2000. Projeção plana x = -AR*15 (céu visto da Terra:
+# Betelgeuse em cima à esquerda, Rigel embaixo à direita), y = Dec.
+# Escala uniforme -> proporções fiéis às distâncias angulares reais no céu.
+ORION = {
+    "betelgeuse": (5.9195, 7.4071, 0.50),
+    "bellatrix": (5.4189, 6.3497, 1.64),
+    "meissa": (5.5856, 9.9342, 3.33),
+    "alnitak": (5.6793, -1.9426, 1.77),
+    "alnilam": (5.6036, -1.2019, 1.69),
+    "mintaka": (5.5334, -0.2991, 2.23),
+    "hatysa": (5.5904, -5.9099, 2.77),
+    "saiph": (5.7959, -9.6696, 2.09),
+    "rigel": (5.2423, -8.2016, 0.13),
 }
 EDGES = [
     ("meissa", "betelgeuse"), ("meissa", "bellatrix"),
     ("betelgeuse", "alnitak"), ("bellatrix", "mintaka"),
     ("alnitak", "alnilam"), ("alnilam", "mintaka"),
+    ("alnilam", "hatysa"),                              # espada de Órion
     ("alnitak", "saiph"), ("mintaka", "rigel"), ("saiph", "rigel"),
 ]
 sminx, sminy, smaxx, smaxy = sh_inner.bounds
-REG = (sminx + 4.5, sminy + 6.0, (smaxx - sminx) - 9.0, (smaxy - sminy) - 20.0)
+CONST_H = 22.0                                          # altura da constelação no escudo
+CONST_C = (SH_CX, (sminy + smaxy) / 2 + 2.0)            # centro no escudo
+
+_raw = {n: (-(ra * 15.0), dec) for n, (ra, dec, _m) in ORION.items()}
+_xs, _ys = zip(*_raw.values())
+_s = CONST_H / (max(_ys) - min(_ys))                    # mesma escala nos dois eixos
+_cx, _cy = (max(_xs) + min(_xs)) / 2, (max(_ys) + min(_ys)) / 2
 
 
 def cpos(name):
-    x0, y0, w, h = REG
-    nx, ny = C[name]
-    return (x0 + nx * w, y0 + ny * h)
+    x, y = _raw[name]
+    return (CONST_C[0] + (x - _cx) * _s, CONST_C[1] + (y - _cy) * _s)
 
 
-const_lines = unary_union([line_strip([cpos(a), cpos(b)], 1.0) for a, b in EDGES])
-small_stars = unary_union([sparkle(*cpos(n), r=1.6, ratio=0.34) for n in C])
+BELT = ("alnitak", "alnilam", "mintaka")
 
-# a ESTRELA EM DESTAQUE (estrela "Soares") — ponto mais alto da peça (10 mm),
-# brilhando no topo do escudo, acima da constelação
-hero_xy = (SH_CX, smaxy - 7.0)
-hero = sparkle(*hero_xy, r=4.8, ratio=0.28).union(sparkle(*hero_xy, r=2.9, ratio=0.34, rot=np.pi / 4))
-hero_halo = sparkle(*hero_xy, r=6.6, ratio=0.30, rot=np.pi / 4).difference(hero.buffer(0.5))
+
+def star_r(name, mag, base=2.2, slope=0.4, rmin=0.9):
+    """Raio proporcional ao brilho real (magnitude menor = estrela maior).
+    As três Marias ficam compactas: na escala real distam ~1,5 mm entre si."""
+    r = max(rmin, base - slope * mag)
+    return min(r, 1.0) if name in BELT else r
+
+
+small_stars = unary_union(
+    [sparkle(*cpos(n), r=star_r(n, m), ratio=0.34) for n, (_ra, _dec, m) in ORION.items() if n != "rigel"]
+)
+
+# a ESTRELA EM DESTAQUE — Rigel, a mais brilhante de Órion (mag 0.13):
+# em ouro, ponto mais alto da peça (10 mm), na posição real
+hero_xy = cpos("rigel")
+hero = sparkle(*hero_xy, r=4.4, ratio=0.26).union(sparkle(*hero_xy, r=2.6, ratio=0.34, rot=np.pi / 4))
+
+# linhas por baixo recortadas ao redor das estrelas (sem sólidos sobrepostos)
+const_lines = unary_union([line_strip([cpos(a), cpos(b)], 0.85) for a, b in EDGES])
+const_lines = const_lines.difference(small_stars.buffer(0.12))
 
 sh_clip = sh_inner.buffer(-0.3)
 
@@ -191,9 +220,8 @@ parts = [
     ("base_cartao_preto", card, 0.0, BASE_Z, BLACK),
     ("moldura_ouro", card_rim, BASE_Z, RIM_Z, GOLD),
     ("escudo_borda_ouro", cc(sh_rim), BASE_Z, RIM_Z + 0.2, GOLD),
-    ("constelacao_linhas_branco", sh_clip.intersection(const_lines.difference(hero.buffer(0.6))), BASE_Z, LINE_Z, WHITE),
-    ("estrelas_pequenas_branco", sh_clip.intersection(small_stars.difference(hero.buffer(0.6))), BASE_Z, STAR_Z, WHITE),
-    ("estrela_soares_halo_branco", sh_clip.intersection(hero_halo), BASE_Z, STAR_Z, WHITE),
+    ("constelacao_linhas_branco", sh_clip.intersection(const_lines.difference(hero.buffer(1.6))), BASE_Z, LINE_Z, WHITE),
+    ("estrelas_pequenas_branco", sh_clip.intersection(small_stars.difference(hero.buffer(1.2))), BASE_Z, STAR_Z, WHITE),
     ("estrela_soares_destaque_ouro", sh_clip.intersection(hero), BASE_Z, HERO_Z, GOLD),
     ("nome_orion_ouro", cc(name_txt), BASE_Z, NAME_Z, GOLD),
     ("poker_ouro", cc(poker_full), BASE_Z, SUB_Z, GOLD),

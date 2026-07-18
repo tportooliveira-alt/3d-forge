@@ -4,6 +4,18 @@ Redesign moderno do logo **ÓRION POKER** (base: `Paulo_Poker_02alt.pdf`) como p
 física em relevo multicolor, com a estrela em destaque como ponto mais alto da peça
 e o nome/escudo "saindo" da base em camadas.
 
+## Constelação real
+
+A constelação usa as **posições reais das estrelas de Órion** (AR/Dec J2000),
+projetadas com escala uniforme — as proporções são fiéis às distâncias angulares
+no céu (célebre ampulheta ~2× mais alta que larga). O tamanho de cada estrela é
+proporcional ao brilho real (magnitude aparente), incluindo as Três Marias
+compactas e a espada (Hatysa). A **estrela em destaque é Rigel**, a mais
+brilhante de Órion (mag 0,13) — em ouro e no ponto mais alto da peça.
+
+Estrelas: Betelgeuse, Bellatrix, Meissa, Alnitak, Alnilam, Mintaka, Hatysa,
+Saiph e Rigel.
+
 ## Formatos
 
 | Modelo | Script | Dimensões | Saída |
@@ -31,7 +43,7 @@ e o nome/escudo "saindo" da base em camadas.
 - POKER + linha (ouro): 6,0 → 7,6 mm
 - Naipes: 6,0 → 7,2 mm
 - Nome ÓRION (ouro): 6,0 → 8,4 mm
-- **Estrela em destaque (ouro): 6,0 → 10,0 mm** — o ponto mais alto da peça
+- **Rigel, estrela em destaque (ouro): 6,0 → 10,0 mm** — o ponto mais alto da peça
 
 ## Regenerar
 

@@ -130,46 +130,70 @@ rim = shield.difference(shield.buffer(-4.2))          # borda dourada
 inner = shield.buffer(-4.2)
 
 # ---------------------------------------------------------------- constelação de Órion
-# posições normalizadas (forma clássica de ampulheta do logo)
-C = {
-    "meissa": (0.50, 1.00),
-    "betelgeuse": (0.24, 0.78),
-    "bellatrix": (0.74, 0.80),
-    "alnitak": (0.40, 0.44),
-    "alnilam": (0.48, 0.41),
-    "mintaka": (0.56, 0.38),
-    "saiph": (0.30, 0.04),
-    "rigel": (0.72, 0.00),
+# posições REAIS: (AR em horas, Dec em graus, magnitude aparente), J2000.
+# Projeção plana x = -AR*15 (céu visto da Terra: Betelgeuse em cima à
+# esquerda, Rigel embaixo à direita), y = Dec. Escala uniforme -> proporções
+# fiéis às distâncias angulares reais no céu.
+ORION = {
+    "betelgeuse": (5.9195, 7.4071, 0.50),
+    "bellatrix": (5.4189, 6.3497, 1.64),
+    "meissa": (5.5856, 9.9342, 3.33),
+    "alnitak": (5.6793, -1.9426, 1.77),
+    "alnilam": (5.6036, -1.2019, 1.69),
+    "mintaka": (5.5334, -0.2991, 2.23),
+    "hatysa": (5.5904, -5.9099, 2.77),
+    "saiph": (5.7959, -9.6696, 2.09),
+    "rigel": (5.2423, -8.2016, 0.13),
 }
 EDGES = [
     ("meissa", "betelgeuse"), ("meissa", "bellatrix"),
     ("betelgeuse", "alnitak"), ("bellatrix", "mintaka"),
     ("alnitak", "alnilam"), ("alnilam", "mintaka"),
+    ("alnilam", "hatysa"),                              # espada de Órion
     ("alnitak", "saiph"), ("mintaka", "rigel"), ("saiph", "rigel"),
 ]
+CONST_H = 36.0                                          # altura da constelação
+CONST_C = (-4.0, 27.0)                                  # centro no céu do escudo
+
+_raw = {n: (-(ra * 15.0), dec) for n, (ra, dec, _m) in ORION.items()}
+_xs, _ys = zip(*_raw.values())
+_s = CONST_H / (max(_ys) - min(_ys))                    # mesma escala nos dois eixos
+_ccx, _ccy = (max(_xs) + min(_xs)) / 2, (max(_ys) + min(_ys)) / 2
 
 
-def cpos(name, region=(-27, 8, 50, 38)):  # x0, y0, w, h
-    x0, y0, w, h = region
-    nx, ny = C[name]
-    return (x0 + nx * w, y0 + ny * h)
+def cpos(name):
+    x, y = _raw[name]
+    return (CONST_C[0] + (x - _ccx) * _s, CONST_C[1] + (y - _ccy) * _s)
 
 
-const_lines = unary_union([line_strip([cpos(a), cpos(b)], 1.5) for a, b in EDGES])
+BELT = ("alnitak", "alnilam", "mintaka")
+
+
+def star_r(name, mag, base=3.4, slope=0.62, rmin=1.3):
+    """Raio proporcional ao brilho real (magnitude menor = estrela maior).
+    As Três Marias ficam compactas: na escala real distam ~2,5 mm entre si."""
+    r = max(rmin, base - slope * mag)
+    return min(r, 1.6) if name in BELT else r
+
+
 small_stars = unary_union(
-    [sparkle(*cpos(n), r=2.6, ratio=0.30, points=4) for n in C]
-    + [sparkle(*cpos(n), r=1.5, ratio=0.5, points=8, rot=0.4) for n in ("alnilam", "alnitak", "mintaka")]
+    [sparkle(*cpos(n), r=star_r(n, m), ratio=0.34) for n, (_ra, _dec, m) in ORION.items() if n != "rigel"]
 )
+
 # brilhos decorativos espalhados no céu
-DECOR = [(-34, 18, 2.2), (-40, 32, 1.6), (36, 12, 2.0), (-26, 44, 1.5), (24, 47, 1.4), (-14, 4, 1.4)]
+DECOR = [(-34, 18, 2.2), (-40, 32, 1.6), (36, 12, 2.0), (-26, 44, 1.5), (24, 47, 1.4), (32, 34, 2.4)]
 decor_stars = unary_union([sparkle(x, y, r, ratio=0.32) for x, y, r in DECOR])
 
-# a ESTRELA EM DESTAQUE (estrela "Soares") — grande, 8 pontas, a mais alta da peça
-hero_xy = (33.0, 34.0)
-hero = sparkle(*hero_xy, r=8.5, ratio=0.26, points=4).union(
-    sparkle(*hero_xy, r=5.0, ratio=0.30, points=4, rot=np.pi / 4)
+# a ESTRELA EM DESTAQUE — Rigel, a mais brilhante de Órion (mag 0.13):
+# em ouro, ponto mais alto da peça, na posição real
+hero_xy = cpos("rigel")
+hero = sparkle(*hero_xy, r=7.0, ratio=0.26, points=4).union(
+    sparkle(*hero_xy, r=4.2, ratio=0.34, points=4, rot=np.pi / 4)
 )
-hero_halo = sparkle(*hero_xy, r=12.5, ratio=0.30, points=4, rot=np.pi / 4).difference(hero.buffer(0.6))
+
+# linhas por baixo recortadas ao redor das estrelas (sem sólidos sobrepostos)
+const_lines = unary_union([line_strip([cpos(a), cpos(b)], 1.3) for a, b in EDGES])
+const_lines = const_lines.difference(small_stars.buffer(0.15))
 
 # ---------------------------------------------------------------- textos
 name_txt = center_at(text_poly("ÓRION", SERIF_BOLD, 20), 0, -12.5, target_w=78)
@@ -202,10 +226,9 @@ parts = [
     # (nome, geometria, z0, altura, cor RGBA)
     ("base_escudo_preto", shield, 0.0, BASE_Z, BLACK),
     ("borda_ouro", rim, BASE_Z, RIM_Z, GOLD),
-    ("constelacao_linhas_branco", clipped(const_lines.difference(hero.buffer(0.8))), BASE_Z, LINE_Z, WHITE),
-    ("estrelas_pequenas_branco", clipped(small_stars.difference(hero.buffer(0.8))), BASE_Z, STAR_Z, WHITE),
+    ("constelacao_linhas_branco", clipped(const_lines.difference(hero.buffer(2.2))), BASE_Z, LINE_Z, WHITE),
+    ("estrelas_pequenas_branco", clipped(small_stars.difference(hero.buffer(1.6))), BASE_Z, STAR_Z, WHITE),
     ("estrelas_decor_ouro", clipped(decor_stars), BASE_Z, STAR_Z, GOLD),
-    ("estrela_soares_halo_branco", clipped(hero_halo), BASE_Z, STAR_Z, WHITE),
     ("estrela_soares_destaque_ouro", clipped(hero), BASE_Z, HERO_Z, GOLD),
     ("nome_orion_ouro", clipped(name_txt), BASE_Z, NAME_Z, GOLD),
     ("poker_ouro", clipped(poker_full), BASE_Z, SUB_Z, GOLD),
