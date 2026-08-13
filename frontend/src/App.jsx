@@ -234,7 +234,14 @@ export default function App() {
   const [printer, setPrinter] = useState("ender3");
   const [filament, setFilament] = useState("pla");
   const [infill, setInfill] = useState(20);
+  const [imgModo, setImgModo] = useState("auto");
+  const [imgLargura, setImgLargura] = useState(100);
+  const [imgEspessura, setImgEspessura] = useState(3);
   const chatEndRef = useRef(null);
+
+  const IMG_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"];
+  const isImage = (name = "") => IMG_EXTS.some(e => name.toLowerCase().endsWith(e));
+  const image3dParams = () => `?modo=${imgModo}&largura_mm=${imgLargura}&espessura_max=${imgEspessura}`;
 
   // Fetch health on mount
   useEffect(() => {
@@ -262,7 +269,7 @@ export default function App() {
     } catch (e) { /* optional */ }
   };
 
-  const doAction = async (action, f) => {
+  const doAction = async (action, f, params = "") => {
     const theFile = f || file;
     if (!theFile) { setError("Selecione um arquivo primeiro"); return; }
     setLoading(true); setError(null); setResult(null); setStlData(null);
@@ -270,17 +277,19 @@ export default function App() {
     setLoadingMsg(`Executando ${action}...`);
 
     try {
-      const data = await apiPost(action, theFile);
+      const data = await apiPost(action, theFile, params);
       setResult(data);
       setTab("result");
       if (data.output) loadStl(data.output);
 
-      // Auto analyze + estimate em paralelo
-      setLoadingMsg("Analisando e estimando impressão...");
-      const promises = [];
-      promises.push(apiPost("analyze", theFile).then(d => d.status === "done" && setAnalysis(d)).catch(() => {}));
-      promises.push(apiPost("estimate", theFile, `?printer=${printer}&filament=${filament}&infill=${infill}`).then(d => d.status === "done" && setEstimate(d)).catch(() => {}));
-      await Promise.allSettled(promises);
+      // Analyze/estimate só rodam sobre malha — imagem crua não serve de entrada
+      if (!isImage(theFile.name)) {
+        setLoadingMsg("Analisando e estimando impressão...");
+        const promises = [];
+        promises.push(apiPost("analyze", theFile).then(d => d.status === "done" && setAnalysis(d)).catch(() => {}));
+        promises.push(apiPost("estimate", theFile, `?printer=${printer}&filament=${filament}&infill=${infill}`).then(d => d.status === "done" && setEstimate(d)).catch(() => {}));
+        await Promise.allSettled(promises);
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -290,7 +299,10 @@ export default function App() {
   const doExport = async (fmt) => {
     if (!file) return;
     try {
-      const data = await apiPost("export", file, `?format=${fmt}`);
+      // Imagem não entra no /api/export: regera pelo image3d já no formato pedido
+      const data = isImage(fileName)
+        ? await apiPost("image3d", file, `${image3dParams()}&formato=${fmt}`)
+        : await apiPost("export", file, `?format=${fmt}`);
       if (data.output) {
         const fn = data.output.split("/").pop();
         const r = await fetch(`${API}/api/model-file/${fn}`);
@@ -331,9 +343,10 @@ export default function App() {
     }
   };
 
-  const handleFile = (f, action) => {
+  const handleFile = (f, action, params = "") => {
+    if (!f) return;
     setFile(f); setFileName(f.name);
-    doAction(action, f);
+    doAction(action, f, params);
   };
 
   const tabs = [
@@ -389,10 +402,42 @@ export default function App() {
         {/* UPLOAD TAB */}
         {tab === "upload" && (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <DropZone icon="📦" title="Modelo 3D" subtitle="STL OBJ PLY FBX 3MF" accept=".stl,.obj,.ply,.fbx,.3mf" onFile={f => handleFile(f, "convert")} />
-              <DropZone icon="📸" title="Foto → 3D" subtitle="JPG PNG WebP" accept=".jpg,.jpeg,.png,.webp" onFile={f => handleFile(f, "face3d")} />
+              <DropZone icon="📸" title="Rosto → 3D" subtitle="JPG PNG WebP" accept=".jpg,.jpeg,.png,.webp" onFile={f => handleFile(f, "face3d")} />
             </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <DropZone icon="🖼" title="Imagem → peça imprimível" subtitle="Litofania · relevo · silhueta — qualquer imagem"
+                accept=".jpg,.jpeg,.png,.webp,.bmp,.tiff" onFile={f => handleFile(f, "image3d", image3dParams())} />
+            </div>
+
+            <Section title="Imagem → 3D">
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10, color: T.textDim, display: "block", marginBottom: 4 }}>Modo</label>
+                  <select value={imgModo} onChange={e => setImgModo(e.target.value)} style={{ width: "100%", background: T.bg, border: `1px solid ${T.border}`, color: T.text, padding: "8px 10px", borderRadius: 6, fontSize: 12 }}>
+                    <option value="auto">Auto</option>
+                    <option value="litofania">Litofania</option>
+                    <option value="relevo">Relevo</option>
+                    <option value="silhueta">Silhueta</option>
+                    <option value="profundidade">Profundidade (IA)</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10, color: T.textDim, display: "block", marginBottom: 4 }}>Largura: {imgLargura}mm</label>
+                  <input type="range" min="20" max="250" step="5" value={imgLargura} onChange={e => setImgLargura(+e.target.value)} style={{ width: "100%", accentColor: T.cyan }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10, color: T.textDim, display: "block", marginBottom: 4 }}>Espessura: {imgEspessura}mm</label>
+                  <input type="range" min="1" max="20" step="0.5" value={imgEspessura} onChange={e => setImgEspessura(+e.target.value)} style={{ width: "100%", accentColor: T.cyan }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: T.textMuted, lineHeight: 1.5 }}>
+                Litofania: escuro fica grosso, iluminar por trás. Relevo: brilho vira altura sobre uma base.
+                Silhueta: recorta o traço e extruda (logo, chaveiro).
+              </div>
+            </Section>
 
             {file && (
               <Section title="Arquivo carregado">
@@ -401,10 +446,19 @@ export default function App() {
                   <span style={{ fontSize: 10, color: T.textMuted }}>{(file.size / 1024).toFixed(0)} KB</span>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <Btn onClick={() => doAction("convert")}>Converter</Btn>
-                  <Btn onClick={() => doAction("repair")}>Reparar</Btn>
-                  <Btn onClick={() => { doAction("analyze"); setTab("result"); }}>Analisar</Btn>
-                  <Btn onClick={() => { doEstimate(); setTab("print"); }}>Estimar</Btn>
+                  {isImage(fileName) ? (
+                    <>
+                      <Btn primary onClick={() => doAction("image3d", null, image3dParams())}>Gerar 3D ({imgModo})</Btn>
+                      <Btn onClick={() => doAction("face3d")}>Rosto → 3D</Btn>
+                    </>
+                  ) : (
+                    <>
+                      <Btn onClick={() => doAction("convert")}>Converter</Btn>
+                      <Btn onClick={() => doAction("repair")}>Reparar</Btn>
+                      <Btn onClick={() => { doAction("analyze"); setTab("result"); }}>Analisar</Btn>
+                      <Btn onClick={() => { doEstimate(); setTab("print"); }}>Estimar</Btn>
+                    </>
+                  )}
                 </div>
               </Section>
             )}
@@ -435,12 +489,30 @@ export default function App() {
             {result && (
               <>
                 <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                  {result.vertices != null && <Stat label="Vértices" value={result.vertices.toLocaleString()} />}
-                  {result.faces != null && <Stat label="Faces" value={result.faces.toLocaleString()} />}
+                  {(result.vertices ?? result.malha?.vertices) != null && <Stat label="Vértices" value={(result.vertices ?? result.malha.vertices).toLocaleString()} />}
+                  {(result.faces ?? result.malha?.faces) != null && <Stat label="Faces" value={(result.faces ?? result.malha.faces).toLocaleString()} />}
                   {result.score != null && <Stat label="Score" value={result.score} color={T.cyan} />}
+                  {result.malha?.volume_cm3 != null && <Stat label="Volume" value={result.malha.volume_cm3} unit="cm³" />}
                 </div>
+
+                {result.dimensoes_mm && (
+                  <Section title={`Peça · modo ${result.modo}`}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Stat label="Largura" value={result.dimensoes_mm.largura} unit="mm" />
+                      <Stat label="Altura" value={result.dimensoes_mm.altura} unit="mm" />
+                      <Stat label="Espessura" value={result.dimensoes_mm.espessura} unit="mm" />
+                    </div>
+                  </Section>
+                )}
+
+                {result.avisos?.length > 0 && (
+                  <div style={{ background: "#1A1200", border: `1px solid ${T.gold}`, borderRadius: 10, padding: 12, marginBottom: 12, color: T.gold, fontSize: 11, lineHeight: 1.6 }}>
+                    {result.avisos.map((a, i) => <div key={i}>⚠ {a}</div>)}
+                  </div>
+                )}
+
                 <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-                  {result.watertight != null && <Badge ok={result.watertight} yes="Watertight ✓" no="Não watertight" />}
+                  {(result.watertight ?? result.malha?.watertight) != null && <Badge ok={result.watertight ?? result.malha.watertight} yes="Watertight ✓" no="Não watertight" />}
                   {result.iteracoes && <span style={{ fontSize: 10, color: T.gold }}>{result.iteracoes} iterações</span>}
                   {analysis?.printability && <Badge ok={analysis.printability.printable} yes={`Print: ${analysis.printability.score}`} no={`Print: ${analysis.printability.score}`} />}
                 </div>
