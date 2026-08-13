@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import trimesh
 from pathlib import Path
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 
 from app.core.config import OUTPUTS_DIR
 
@@ -49,6 +49,7 @@ def gerar_modelo(
     recorte: bool | None = None,
     forma_mm: float = 0.0,
     detalhe_mm: float | None = None,
+    textos: list[dict] | None = None,
     formato: str = "stl",
 ) -> dict:
     """Converte uma imagem em malha 3D sólida e exporta pro formato pedido."""
@@ -130,6 +131,11 @@ def gerar_modelo(
             altura_campo = np.maximum(altura_campo, base + e_min)
         else:
             altura_campo = e_min + valor * (e_max - e_min) + base
+
+        if textos:
+            altura_campo, gravados = _gravar_textos(altura_campo, textos)
+            if gravados < len(textos):
+                avisos.append(f"{len(textos) - gravados} texto(s) caíram fora da peça e foram ignorados")
 
         # Recorte: sem ele, um fundo branco vira a parte mais alta da peça.
         # Litofania é painel de luz e quer a placa inteira, então só entra se for pedido.
@@ -376,6 +382,73 @@ def _separar_forma_detalhe(valor: np.ndarray, sigma_px: float) -> tuple[np.ndarr
     # é só ruído — dividir por ele amplificaria grão em relevo. O piso limita esse ganho.
     escala = max(float(np.abs(detalhe).max()), 0.35)
     return forma, detalhe / escala
+
+
+FONTES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+]
+
+
+def _gravar_textos(altura: np.ndarray, textos: list[dict]) -> tuple[np.ndarray, int]:
+    """
+    Grava textos em relevo sobre o mapa de altura.
+    Cada item: {"texto", "x", "y" (centro, 0-1), "tamanho" (altura da letra, fração da peça),
+                "altura_mm" (quanto sobe), "rotacao" (graus), "fonte" (caminho opcional)}.
+    Como soma sobre a altura existente, a gravação acompanha a superfície embaixo dela.
+    """
+    from PIL import ImageFont
+
+    nr, nc = altura.shape
+    out = altura.copy()
+    gravados = 0
+
+    for t in textos:
+        texto = str(t.get("texto", "")).strip()
+        if not texto:
+            continue
+        alt_mm = float(t.get("altura_mm", 2.0))
+        tamanho = float(t.get("tamanho", 0.06))
+        cx, cy = float(t.get("x", 0.5)), float(t.get("y", 0.5))
+        alvo_px = max(4, int(round(tamanho * nr)))
+
+        fonte = None
+        for caminho in ([t["fonte"]] if t.get("fonte") else []) + FONTES:
+            try:
+                fonte = ImageFont.truetype(caminho, alvo_px)
+                break
+            except Exception:
+                continue
+        if fonte is None:
+            fonte = ImageFont.load_default()
+
+        # Renderiza numa tela folgada e recorta pelo bounding box real da tinta
+        tela = Image.new("L", (alvo_px * (len(texto) + 4), alvo_px * 4), 0)
+        ImageDraw.Draw(tela).text((alvo_px * 2, alvo_px), texto, fill=255, font=fonte)
+        caixa = tela.getbbox()
+        if caixa is None:
+            continue
+        selo = tela.crop(caixa)
+
+        rot = float(t.get("rotacao", 0.0))
+        if rot:
+            selo = selo.rotate(rot, resample=Image.BICUBIC, expand=True)
+
+        sw, sh = selo.size
+        x0 = int(round(cx * nc - sw / 2))
+        y0 = int(round(cy * nr - sh / 2))
+
+        folha = Image.new("L", (nc, nr), 0)
+        folha.paste(selo, (x0, y0))
+        mascara = np.asarray(folha, dtype=np.float32) / 255.0
+        if mascara.max() <= 0:
+            continue
+
+        out += mascara * alt_mm
+        gravados += 1
+
+    return out, gravados
 
 
 def _px_para_mm(nr: int, nc: int, largura_mm: float, altura_mm: float | None) -> float:

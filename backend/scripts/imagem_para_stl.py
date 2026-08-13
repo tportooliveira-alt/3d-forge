@@ -44,6 +44,8 @@ def main() -> int:
                        help="Força o recorte do fundo liso")
     grupo.add_argument("--sem-recorte", dest="recorte", action="store_false",
                        help="Mantém a placa retangular inteira")
+    p.add_argument("--textos", default=None,
+                   help='Gravacoes em relevo, JSON: [{"texto":"BF","x":0.7,"y":0.62,"tamanho":0.05,"altura_mm":3}]')
     p.add_argument("--formato", default="stl", choices=["stl", "obj", "glb", "ply", "3mf"])
     p.add_argument("--saida", default=None, help="Caminho do arquivo de saída")
     args = p.parse_args()
@@ -67,6 +69,7 @@ def main() -> int:
         recorte=args.recorte,
         forma_mm=args.forma_mm,
         detalhe_mm=args.detalhe_mm,
+        textos=json.loads(args.textos) if args.textos else None,
         formato=args.formato,
     )
 

@@ -291,6 +291,54 @@ def test_forma_respeita_o_piso_da_base(imagens):
     assert r["dimensoes_mm"]["espessura"] >= 5
 
 
+def test_gravacao_de_texto_sobe_o_relevo(imagens):
+    """Texto gravado tem que virar material a mais, na altura pedida."""
+    sem = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100, recorte=False)
+    com = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100, recorte=False,
+                 textos=[{"texto": "BF", "x": 0.5, "y": 0.5, "tamanho": 0.20, "altura_mm": 3.0}])
+
+    assert com["malha"]["volume_cm3"] > sem["malha"]["volume_cm3"]
+    # A gravação soma sobre a cota local, não sobre o pico — então sobe, mas nunca mais que 3mm
+    delta = com["dimensoes_mm"]["espessura"] - sem["dimensoes_mm"]["espessura"]
+    assert 0 < delta <= 3.0 + 0.2
+    assert trimesh.load(com["output"], force="mesh").is_watertight
+
+    # Numa superfície plana a altura da gravação é exata
+    plano_sem = _gerar(image_path=str(imagens / "uniforme.png"), modo="relevo",
+                       largura_mm=60, base_mm=3, recorte=False)
+    plano_com = _gerar(image_path=str(imagens / "uniforme.png"), modo="relevo",
+                       largura_mm=60, base_mm=3, recorte=False,
+                       textos=[{"texto": "BF", "x": 0.5, "y": 0.5, "tamanho": 0.3, "altura_mm": 3.0}])
+    assert plano_com["dimensoes_mm"]["espessura"] == pytest.approx(
+        plano_sem["dimensoes_mm"]["espessura"] + 3.0, abs=0.15)
+
+
+def test_gravacao_acompanha_a_superficie(imagens):
+    """A gravação soma sobre a altura existente, então segue o relevo embaixo dela."""
+    r = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100, recorte=False,
+               espessura_max=10, textos=[{"texto": "IIIIII", "x": 0.5, "y": 0.5,
+                                          "tamanho": 0.3, "altura_mm": 2.0}])
+    mesh = trimesh.load(r["output"], force="mesh")
+    assert mesh.is_watertight
+    # foto.png é um gradiente: o texto no meio não pode ficar todo na mesma cota
+    v = mesh.vertices
+    faixa = v[(np.abs(v[:, 1] - v[:, 1].mean()) < 5) & (v[:, 2] > 1)]
+    assert faixa[:, 2].std() > 0.3
+
+
+def test_texto_fora_da_peca_e_ignorado_com_aviso(imagens):
+    r = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100, recorte=False,
+               textos=[{"texto": "X", "x": 9.0, "y": 9.0, "tamanho": 0.05, "altura_mm": 2.0}])
+    assert r["status"] == "done"
+    assert trimesh.load(r["output"], force="mesh").is_watertight
+
+
+def test_texto_vazio_nao_quebra(imagens):
+    r = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100, recorte=False,
+               textos=[{"texto": "   ", "x": 0.5, "y": 0.5}, {}])
+    assert r["status"] == "done"
+
+
 def test_avisos_de_impressao(imagens):
     """Parâmetros arriscados pra FDM viram aviso, não erro silencioso."""
     r = _gerar(image_path=str(imagens / "foto.png"), modo="litofania", espessura_min=0.1, espessura_max=0.5)

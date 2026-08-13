@@ -27,12 +27,23 @@ async def image3d(
     recorte: bool | None = Query(None, description="Recorta o fundo liso. Padrão: liga no relevo/profundidade, desliga na litofania"),
     forma_mm: float = Query(0.0, ge=0, le=50, description="Alto-relevo: raio da forma em mm. >0 separa forma de detalhe e permite relevo profundo sem virar picos"),
     detalhe_mm: float | None = Query(None, ge=0, le=50, description="Espessura reservada ao detalhe fino em mm (padrão: 12% do relevo)"),
+    textos: str | None = Query(None, description='Gravações em relevo, JSON: [{"texto":"BF","x":0.7,"y":0.62,"tamanho":0.05,"altura_mm":3}]'),
     formato: str = Query("stl", description="Saída: stl, obj, glb, ply, 3mf"),
 ):
     """Qualquer imagem → sólido imprimível (litofania, relevo, silhueta ou profundidade IA)."""
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_IMAGES:
         raise HTTPException(400, f"Envie uma imagem: {ALLOWED_IMAGES}")
+
+    lista_textos = None
+    if textos:
+        import json
+        try:
+            lista_textos = json.loads(textos)
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, f"textos não é JSON válido: {e}")
+        if not isinstance(lista_textos, list) or not all(isinstance(i, dict) for i in lista_textos):
+            raise HTTPException(400, "textos deve ser uma lista de objetos")
 
     try:
         saved = save_upload(file)
@@ -57,6 +68,7 @@ async def image3d(
         recorte=recorte,
         forma_mm=forma_mm,
         detalhe_mm=detalhe_mm,
+        textos=lista_textos,
         formato=formato,
     )
 
