@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.routes import upload, convert, repair, process, chat, face3d, export, estimate, viewer, analyze, admin, jobs
+from app.routes import upload, convert, repair, process, chat, face3d, image3d, export, estimate, viewer, analyze, admin, jobs
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app.include_router(estimate.router, prefix="/api", tags=["Impressão 3D"])
 app.include_router(process.router, prefix="/api", tags=["Orquestrador"])
 app.include_router(chat.router, prefix="/api", tags=["Chat"])
 app.include_router(face3d.router, prefix="/api", tags=["Face3D"])
+app.include_router(image3d.router, prefix="/api", tags=["Image3D"])
 app.include_router(viewer.router, prefix="/api", tags=["Viewer"])
 app.include_router(admin.router, prefix="/api", tags=["Admin"])
 app.include_router(jobs.router, prefix="/api", tags=["Jobs/Firebase"])
@@ -54,6 +55,7 @@ async def root():
             "analyze": "POST /api/analyze",
             "estimate": "POST /api/estimate?printer=ender3&filament=pla",
             "face3d": "POST /api/face3d",
+            "image3d": "POST /api/image3d?modo=auto&largura_mm=100",
             "chat": "POST /api/chat",
             "jobs": "GET /api/jobs",
             "stats": "GET /api/stats",
