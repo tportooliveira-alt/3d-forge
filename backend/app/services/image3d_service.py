@@ -53,6 +53,7 @@ def gerar_modelo(
     sujeito_mascara: str | None = None,
     salto_mm: float = 0.0,
     sujeito_borda_mm: float = 2.0,
+    sujeito_domo_mm: float = 0.0,
     formato: str = "stl",
 ) -> dict:
     """Converte uma imagem em malha 3D sólida e exporta pro formato pedido."""
@@ -138,7 +139,8 @@ def gerar_modelo(
         if salto_mm > 0 and sujeito_mascara:
             # O brilho sozinho nao diz o que esta na frente: num render, o fundo claro sobe
             # e o sujeito escuro afunda. A mascara diz quem e o sujeito; o salto o poe pra fora.
-            rampa = _mascara_sujeito(sujeito_mascara, altura_campo.shape, sujeito_borda_mm / px_mm)
+            rampa = _mascara_sujeito(sujeito_mascara, altura_campo.shape, sujeito_borda_mm / px_mm,
+                                     sujeito_domo_mm / px_mm)
             if rampa is None:
                 avisos.append(f"Não consegui ler a máscara de sujeito '{sujeito_mascara}' — segui sem o salto")
             else:
@@ -396,11 +398,15 @@ def _separar_forma_detalhe(valor: np.ndarray, sigma_px: float) -> tuple[np.ndarr
     return forma, detalhe / escala
 
 
-def _mascara_sujeito(caminho: str, shape: tuple, borda_px: float) -> np.ndarray | None:
+def _mascara_sujeito(caminho: str, shape: tuple, borda_px: float,
+                     domo_px: float = 0.0) -> np.ndarray | None:
     """
     Lê uma máscara de primeiro plano (branco = sujeito) e devolve uma rampa 0-1 no grid.
-    A borda entra suave: com a máscara traçada à mão, um degrau reto denunciaria cada
-    imprecisão do contorno, enquanto a rampa lê como a própria curva da escultura.
+
+    Com domo_px > 0 a rampa vira um volume arredondado em vez de um platô: a altura sobe
+    com a distância até a borda da máscara, num perfil circular. É o que faz o sujeito ler
+    como corpo saindo da placa em vez de recorte de papelão levantado — e de quebra as
+    partes finas (pernas, rabo) sobem menos que as grossas (tronco), que é o certo.
     """
     try:
         img = Image.open(caminho).convert("L")
@@ -409,7 +415,18 @@ def _mascara_sujeito(caminho: str, shape: tuple, borda_px: float) -> np.ndarray 
 
     nr, nc = shape
     m = cv2.resize(np.asarray(img, dtype=np.uint8), (nc, nr), interpolation=cv2.INTER_AREA)
-    rampa = (m.astype(np.float32) / 255.0)
+
+    if domo_px >= 1.0:
+        dentro = (m >= 128).astype(np.uint8)
+        # distanceTransform mede até o fundo; a borda do quadro não conta como fundo,
+        # senão o sujeito que encosta na borda seria rebaixado sem motivo.
+        dist = cv2.distanceTransform(cv2.copyMakeBorder(dentro, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=1),
+                                     cv2.DIST_L2, 5)[1:-1, 1:-1]
+        d = np.clip(dist / float(domo_px), 0.0, 1.0)
+        rampa = np.sqrt(np.clip(1.0 - (1.0 - d) ** 2, 0.0, 1.0)).astype(np.float32)
+    else:
+        rampa = m.astype(np.float32) / 255.0
+
     if borda_px >= 0.5:
         rampa = cv2.GaussianBlur(rampa, (0, 0), sigmaX=float(borda_px))
     return np.clip(rampa, 0.0, 1.0)

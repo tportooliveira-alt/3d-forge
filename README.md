@@ -90,8 +90,11 @@ em vez dos ~8mm do relevo raso.
 o fundo sobe e o sujeito escuro *afunda* — o oposto do que se quer num alto-relevo. Nenhuma
 segmentação por cor resolve isso quando sujeito e fundo são do mesmo material. `sujeito_mascara`
 recebe uma máscara de primeiro plano (branco = sujeito) e `salto_mm` diz quanto ela sobe acima
-do resto. A borda entra em rampa (`sujeito_borda_mm`), então imprecisão do contorno lê como
-curva da escultura em vez de degrau.
+do resto. Com `sujeito_domo_mm` o salto vira volume arredondado em vez de platô: a altura sobe
+com a distância até a borda da máscara, então o sujeito lê como corpo saindo da placa e não como
+recorte de papelão levantado. O arredondamento age só na faixa junto à borda — partes grossas e
+finas mantêm a altura cheia no miolo. A borda ainda leva um blur final (`sujeito_borda_mm`), então
+imprecisão do contorno traçado lê como curva da escultura em vez de degrau.
 
 **Gravar texto.** `textos` acrescenta letras em relevo sobre a peça. Como soma sobre a altura
 existente, a gravação acompanha a superfície embaixo dela (um monograma num tambor curvo segue

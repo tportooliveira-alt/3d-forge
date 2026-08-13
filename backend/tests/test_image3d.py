@@ -20,6 +20,7 @@ from app.services.image3d_service import (  # noqa: E402
     _corrigir_pinos,
     _extrudar_mascara,
     _mascara_objeto,
+    _mascara_sujeito,
 )
 
 
@@ -376,6 +377,32 @@ def test_salto_poe_o_sujeito_pra_fora(imagens, tmp_path):
     assert subida > 0, "com a máscara o sujeito tem que ficar acima do fundo"
     assert subida - queda == pytest.approx(15, abs=0.5)  # o salto entra inteiro
     assert trimesh.load(com["output"], force="mesh").is_watertight
+
+
+def test_domo_arredonda_a_lateral_do_sujeito(tmp_path):
+    """
+    Sem domo o salto é um platô: parede vertical na borda, e a peça lê como recorte de
+    papelão levantado. Com domo a altura sobe com a distância até a borda, e o sujeito
+    ganha volume de corpo.
+    """
+    disco = Image.new("L", (400, 400), 0)
+    ImageDraw.Draw(disco).ellipse([100, 100, 300, 300], fill=255)
+    p = tmp_path / "disco.png"
+    disco.save(p)
+
+    plato = _mascara_sujeito(str(p), (400, 400), borda_px=1.0, domo_px=0)
+    domo = _mascara_sujeito(str(p), (400, 400), borda_px=1.0, domo_px=60)
+
+    centro, meio = (200, 200), (200, 265)  # meio fica a ~35px da borda do disco
+    assert plato[centro] == pytest.approx(1.0, abs=0.02)
+    assert plato[meio] == pytest.approx(1.0, abs=0.02)      # platô: mesma cota
+    assert domo[centro] == pytest.approx(1.0, abs=0.02)
+    assert domo[meio] < 0.95                                 # domo: cai indo pra borda
+    assert domo[meio] > 0.4                                  # mas sem despencar
+
+    # E o perfil tem que ser monótono do centro pra fora
+    raio = domo[200, 200:300]
+    assert np.all(np.diff(raio) <= 1e-6)
 
 
 def test_mascara_de_sujeito_ilegivel_avisa(imagens):
