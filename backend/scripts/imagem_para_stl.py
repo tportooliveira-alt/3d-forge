@@ -44,6 +44,12 @@ def main() -> int:
                        help="Força o recorte do fundo liso")
     grupo.add_argument("--sem-recorte", dest="recorte", action="store_false",
                        help="Mantém a placa retangular inteira")
+    p.add_argument("--sujeito", default=None, dest="sujeito_mascara",
+                   help="Mascara PNG do primeiro plano (branco = sujeito)")
+    p.add_argument("--salto", type=float, default=0.0, dest="salto_mm",
+                   help="Quanto o sujeito sobe acima do resto, em mm")
+    p.add_argument("--borda-sujeito", type=float, default=2.0, dest="sujeito_borda_mm",
+                   help="Suavizacao da borda do salto, em mm")
     p.add_argument("--textos", default=None,
                    help='Gravacoes em relevo, JSON: [{"texto":"BF","x":0.7,"y":0.62,"tamanho":0.05,"altura_mm":3}]')
     p.add_argument("--formato", default="stl", choices=["stl", "obj", "glb", "ply", "3mf"])
@@ -70,6 +76,9 @@ def main() -> int:
         forma_mm=args.forma_mm,
         detalhe_mm=args.detalhe_mm,
         textos=json.loads(args.textos) if args.textos else None,
+        sujeito_mascara=args.sujeito_mascara,
+        salto_mm=args.salto_mm,
+        sujeito_borda_mm=args.sujeito_borda_mm,
         formato=args.formato,
     )
 

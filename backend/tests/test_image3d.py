@@ -339,6 +339,59 @@ def test_texto_vazio_nao_quebra(imagens):
     assert r["status"] == "done"
 
 
+def test_salto_poe_o_sujeito_pra_fora(imagens, tmp_path):
+    """
+    Regressão do erro mais grave: num render, o fundo claro sobe e o sujeito escuro
+    AFUNDA. Brilho não diz o que está na frente — a máscara diz, e o salto põe pra fora.
+    """
+    # Sujeito escuro sobre fundo claro: sem máscara ele afunda
+    img = Image.new("L", (300, 300), 210)
+    ImageDraw.Draw(img).ellipse([90, 90, 210, 210], fill=70)
+    p = tmp_path / "sujeito_escuro.png"
+    img.save(p)
+
+    mascara = Image.new("L", (300, 300), 0)
+    ImageDraw.Draw(mascara).ellipse([90, 90, 210, 210], fill=255)
+    pm = tmp_path / "mascara.png"
+    mascara.save(pm)
+
+    def cota(caminho_stl, x, y):
+        """Altura do TOPO em (x, y) normalizado. O fundo da peça também tem vértices
+        nesse XY, em z=0 — usar a média deles derrubaria a leitura pela metade."""
+        m = trimesh.load(caminho_stl, force="mesh")
+        v = m.vertices
+        px = (v[:, 0] - v[:, 0].min()) / np.ptp(v[:, 0])
+        py = 1 - (v[:, 1] - v[:, 1].min()) / np.ptp(v[:, 1])
+        d = (px - x) ** 2 + (py - y) ** 2
+        return v[np.argsort(d)[:30], 2].max()
+
+    sem = _gerar(image_path=str(p), modo="relevo", largura_mm=100,
+                 espessura_max=10, recorte=False)
+    queda = cota(sem["output"], 0.5, 0.5) - cota(sem["output"], 0.12, 0.12)
+    assert queda < 0, "o sujeito escuro precisa afundar sem máscara — se não, o teste não prova nada"
+
+    com = _gerar(image_path=str(p), modo="relevo", largura_mm=100, espessura_max=10,
+                 recorte=False, sujeito_mascara=str(pm), salto_mm=15, sujeito_borda_mm=1)
+    subida = cota(com["output"], 0.5, 0.5) - cota(com["output"], 0.12, 0.12)
+    assert subida > 0, "com a máscara o sujeito tem que ficar acima do fundo"
+    assert subida - queda == pytest.approx(15, abs=0.5)  # o salto entra inteiro
+    assert trimesh.load(com["output"], force="mesh").is_watertight
+
+
+def test_mascara_de_sujeito_ilegivel_avisa(imagens):
+    r = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100,
+               recorte=False, sujeito_mascara="/nao/existe.png", salto_mm=10)
+    assert r["status"] == "done"
+    assert any("máscara de sujeito" in a for a in r["avisos"])
+
+
+def test_salto_sem_mascara_e_ignorado(imagens):
+    sem = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100, recorte=False)
+    com = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100,
+                 recorte=False, salto_mm=20)
+    assert com["dimensoes_mm"]["espessura"] == pytest.approx(sem["dimensoes_mm"]["espessura"], abs=0.01)
+
+
 def test_avisos_de_impressao(imagens):
     """Parâmetros arriscados pra FDM viram aviso, não erro silencioso."""
     r = _gerar(image_path=str(imagens / "foto.png"), modo="litofania", espessura_min=0.1, espessura_max=0.5)

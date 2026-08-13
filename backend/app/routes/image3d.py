@@ -27,6 +27,9 @@ async def image3d(
     recorte: bool | None = Query(None, description="Recorta o fundo liso. Padrão: liga no relevo/profundidade, desliga na litofania"),
     forma_mm: float = Query(0.0, ge=0, le=50, description="Alto-relevo: raio da forma em mm. >0 separa forma de detalhe e permite relevo profundo sem virar picos"),
     detalhe_mm: float | None = Query(None, ge=0, le=50, description="Espessura reservada ao detalhe fino em mm (padrão: 12% do relevo)"),
+    sujeito_mascara: str | None = Query(None, description="Caminho de uma máscara de primeiro plano (branco = sujeito)"),
+    salto_mm: float = Query(0.0, ge=0, le=200, description="Quanto o sujeito da máscara sobe acima do resto, em mm"),
+    sujeito_borda_mm: float = Query(2.0, ge=0, le=20, description="Suavização da borda do salto, em mm"),
     textos: str | None = Query(None, description='Gravações em relevo, JSON: [{"texto":"BF","x":0.7,"y":0.62,"tamanho":0.05,"altura_mm":3}]'),
     formato: str = Query("stl", description="Saída: stl, obj, glb, ply, 3mf"),
 ):
@@ -69,6 +72,9 @@ async def image3d(
         forma_mm=forma_mm,
         detalhe_mm=detalhe_mm,
         textos=lista_textos,
+        sujeito_mascara=sujeito_mascara,
+        salto_mm=salto_mm,
+        sujeito_borda_mm=sujeito_borda_mm,
         formato=formato,
     )
 

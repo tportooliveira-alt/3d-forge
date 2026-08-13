@@ -50,6 +50,9 @@ def gerar_modelo(
     forma_mm: float = 0.0,
     detalhe_mm: float | None = None,
     textos: list[dict] | None = None,
+    sujeito_mascara: str | None = None,
+    salto_mm: float = 0.0,
+    sujeito_borda_mm: float = 2.0,
     formato: str = "stl",
 ) -> dict:
     """Converte uma imagem em malha 3D sólida e exporta pro formato pedido."""
@@ -131,6 +134,15 @@ def gerar_modelo(
             altura_campo = np.maximum(altura_campo, base + e_min)
         else:
             altura_campo = e_min + valor * (e_max - e_min) + base
+
+        if salto_mm > 0 and sujeito_mascara:
+            # O brilho sozinho nao diz o que esta na frente: num render, o fundo claro sobe
+            # e o sujeito escuro afunda. A mascara diz quem e o sujeito; o salto o poe pra fora.
+            rampa = _mascara_sujeito(sujeito_mascara, altura_campo.shape, sujeito_borda_mm / px_mm)
+            if rampa is None:
+                avisos.append(f"Não consegui ler a máscara de sujeito '{sujeito_mascara}' — segui sem o salto")
+            else:
+                altura_campo = altura_campo + rampa * salto_mm
 
         if textos:
             altura_campo, gravados = _gravar_textos(altura_campo, textos)
@@ -382,6 +394,25 @@ def _separar_forma_detalhe(valor: np.ndarray, sigma_px: float) -> tuple[np.ndarr
     # é só ruído — dividir por ele amplificaria grão em relevo. O piso limita esse ganho.
     escala = max(float(np.abs(detalhe).max()), 0.35)
     return forma, detalhe / escala
+
+
+def _mascara_sujeito(caminho: str, shape: tuple, borda_px: float) -> np.ndarray | None:
+    """
+    Lê uma máscara de primeiro plano (branco = sujeito) e devolve uma rampa 0-1 no grid.
+    A borda entra suave: com a máscara traçada à mão, um degrau reto denunciaria cada
+    imprecisão do contorno, enquanto a rampa lê como a própria curva da escultura.
+    """
+    try:
+        img = Image.open(caminho).convert("L")
+    except Exception:
+        return None
+
+    nr, nc = shape
+    m = cv2.resize(np.asarray(img, dtype=np.uint8), (nc, nr), interpolation=cv2.INTER_AREA)
+    rampa = (m.astype(np.float32) / 255.0)
+    if borda_px >= 0.5:
+        rampa = cv2.GaussianBlur(rampa, (0, 0), sigmaX=float(borda_px))
+    return np.clip(rampa, 0.0, 1.0)
 
 
 FONTES = [

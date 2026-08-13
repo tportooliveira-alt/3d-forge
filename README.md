@@ -86,6 +86,13 @@ que leva quase toda a espessura) do **detalhe** (alta frequência, que entra com
 só desenha a superfície). Com `forma_mm=10 espessura_max=34`, o sujeito sai ~22mm acima do fundo
 em vez dos ~8mm do relevo raso.
 
+**Pôr o sujeito pra fora.** Brilho não diz o que está na frente: num render com fundo claro,
+o fundo sobe e o sujeito escuro *afunda* — o oposto do que se quer num alto-relevo. Nenhuma
+segmentação por cor resolve isso quando sujeito e fundo são do mesmo material. `sujeito_mascara`
+recebe uma máscara de primeiro plano (branco = sujeito) e `salto_mm` diz quanto ela sobe acima
+do resto. A borda entra em rampa (`sujeito_borda_mm`), então imprecisão do contorno lê como
+curva da escultura em vez de degrau.
+
 **Gravar texto.** `textos` acrescenta letras em relevo sobre a peça. Como soma sobre a altura
 existente, a gravação acompanha a superfície embaixo dela (um monograma num tambor curvo segue
 a curva). Cada item leva `texto`, `x`/`y` (centro, 0-1), `tamanho` (altura da letra como fração
@@ -112,7 +119,7 @@ python scripts/imagem_para_stl.py trofeu.png --modo relevo \
 
 Parâmetros principais: `modo`, `largura_mm`, `altura_mm`, `espessura_max`, `espessura_min`,
 `base_mm`, `resolucao`, `inverter`, `suavizar`, `gamma`, `limiar`, `moldura_mm`, `recorte`,
-`forma_mm`, `detalhe_mm`, `textos`, `formato`.
+`forma_mm`, `detalhe_mm`, `textos`, `sujeito_mascara`, `salto_mm`, `sujeito_borda_mm`, `formato`.
 
 A resposta traz dimensões em mm, volume, contagem de corpos soltos e **avisos de impressão**
 (parede fina demais pro bico 0.4, detalhe abaixo da resolução da impressora, peça em partes soltas).
