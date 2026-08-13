@@ -47,6 +47,8 @@ def gerar_modelo(
     limiar: int = 128,
     moldura_mm: float = 0.0,
     recorte: bool | None = None,
+    forma_mm: float = 0.0,
+    detalhe_mm: float | None = None,
     formato: str = "stl",
 ) -> dict:
     """Converte uma imagem em malha 3D sólida e exporta pro formato pedido."""
@@ -119,7 +121,15 @@ def gerar_modelo(
             # claro = alto
             valor = 1.0 - campo if inverter else campo
 
-        altura_campo = e_min + valor * (e_max - e_min) + base
+        if forma_mm > 0:
+            # Alto-relevo: sem separar forma de detalhe, aumentar a espessura só amplifica
+            # o ruído do sombreamento e a peça vira uma serra de picos.
+            d_mm = detalhe_mm if detalhe_mm is not None else 0.12 * (e_max - e_min)
+            forma, detalhe = _separar_forma_detalhe(valor, forma_mm / px_mm)
+            altura_campo = e_min + forma * (e_max - e_min) + detalhe * d_mm + base
+            altura_campo = np.maximum(altura_campo, base + e_min)
+        else:
+            altura_campo = e_min + valor * (e_max - e_min) + base
 
         # Recorte: sem ele, um fundo branco vira a parte mais alta da peça.
         # Litofania é painel de luz e quer a placa inteira, então só entra se for pedido.
@@ -351,6 +361,21 @@ def _reescalar(campo: np.ndarray) -> np.ndarray:
     if hi - lo < 1e-6:
         return np.zeros_like(campo)
     return (campo - lo) / (hi - lo)
+
+
+def _separar_forma_detalhe(valor: np.ndarray, sigma_px: float) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Quebra o campo em forma (baixa frequência, 0-1) e detalhe (alta frequência, -1 a 1).
+    A forma leva quase toda a espessura e faz a peça ter profundidade de verdade;
+    o detalhe entra com pouca amplitude e só desenha a superfície.
+    """
+    forma = _reescalar(cv2.GaussianBlur(valor, (0, 0), sigmaX=max(0.8, float(sigma_px))))
+    detalhe = valor - forma
+
+    # Normalizar pelo pico deixa detalhe_mm previsível, mas numa imagem quase lisa o pico
+    # é só ruído — dividir por ele amplificaria grão em relevo. O piso limita esse ganho.
+    escala = max(float(np.abs(detalhe).max()), 0.35)
+    return forma, detalhe / escala
 
 
 def _px_para_mm(nr: int, nc: int, largura_mm: float, altura_mm: float | None) -> float:

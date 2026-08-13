@@ -35,6 +35,10 @@ def main() -> int:
     p.add_argument("--gamma", type=float, default=1.0, help="Contraste do relevo (<1 realça sombras)")
     p.add_argument("--limiar", type=int, default=128, help="Limiar de corte da silhueta (0-255)")
     p.add_argument("--moldura", type=float, default=0.0, help="Borda sólida em volta, em mm")
+    p.add_argument("--forma", type=float, default=0.0, dest="forma_mm",
+                   help="Alto-relevo: raio da forma em mm (>0 permite relevo profundo sem picos)")
+    p.add_argument("--detalhe", type=float, default=None, dest="detalhe_mm",
+                   help="Espessura do detalhe fino em mm (padrão: 12%% do relevo)")
     grupo = p.add_mutually_exclusive_group()
     grupo.add_argument("--recortar", dest="recorte", action="store_true", default=None,
                        help="Força o recorte do fundo liso")
@@ -61,6 +65,8 @@ def main() -> int:
         limiar=args.limiar,
         moldura_mm=args.moldura,
         recorte=args.recorte,
+        forma_mm=args.forma_mm,
+        detalhe_mm=args.detalhe_mm,
         formato=args.formato,
     )
 

@@ -80,6 +80,12 @@ Funciona com qualquer imagem (foto, logo, desenho). Diferente do `/api/face3d`, 
 
 A saída é sempre um sólido fechado (watertight), apoiado em z=0 e já na escala em mm.
 
+**Alto-relevo.** Aumentar `espessura_max` sozinho não dá profundidade: amplifica junto o ruído
+do sombreamento e a peça vira uma serra de picos. `forma_mm` separa a **forma** (baixa frequência,
+que leva quase toda a espessura) do **detalhe** (alta frequência, que entra com pouca amplitude e
+só desenha a superfície). Com `forma_mm=10 espessura_max=34`, o sujeito sai ~22mm acima do fundo
+em vez dos ~8mm do relevo raso.
+
 **Recorte de fundo.** Numa imagem sobre fundo liso, "claro = alto" faria o fundo virar a parte
 mais alta da peça. Por isso `relevo` e `profundidade` recortam o contorno do objeto por padrão,
 e a peça sai no formato dele. A `litofania` não recorta (é painel de luz, quer a placa inteira).
@@ -94,10 +100,12 @@ curl -F "file=@foto.jpg" \
 cd backend
 python scripts/imagem_para_stl.py foto.jpg --modo litofania --largura 120 --moldura 3
 python scripts/imagem_para_stl.py logo.png --modo silhueta --espessura-max 5
+python scripts/imagem_para_stl.py trofeu.png --modo relevo --altura 198 --espessura-max 34 --forma 10
 ```
 
 Parâmetros principais: `modo`, `largura_mm`, `altura_mm`, `espessura_max`, `espessura_min`,
-`base_mm`, `resolucao`, `inverter`, `suavizar`, `gamma`, `limiar`, `moldura_mm`, `recorte`, `formato`.
+`base_mm`, `resolucao`, `inverter`, `suavizar`, `gamma`, `limiar`, `moldura_mm`, `recorte`,
+`forma_mm`, `detalhe_mm`, `formato`.
 
 A resposta traz dimensões em mm, volume, contagem de corpos soltos e **avisos de impressão**
 (parede fina demais pro bico 0.4, detalhe abaixo da resolução da impressora, peça em partes soltas).

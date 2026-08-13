@@ -257,6 +257,40 @@ def test_corpos_soltos_sao_contados_na_peca_recortada(imagens, tmp_path):
         assert any("partes soltas" in a for a in r["avisos"])
 
 
+def test_alto_relevo_e_mais_fundo_e_menos_ruidoso(imagens):
+    """
+    forma_mm separa forma de detalhe. Sem isso, subir a espessura só amplifica o ruído
+    do sombreamento e a peça vira uma serra de picos.
+    """
+    raso = _gerar(image_path=str(imagens / "foto.png"), modo="relevo",
+                  largura_mm=100, espessura_max=30, recorte=False)
+    alto = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100,
+                  espessura_max=30, forma_mm=6, detalhe_mm=3, recorte=False)
+
+    ma = trimesh.load(alto["output"], force="mesh")
+    assert ma.is_watertight
+    assert alto["dimensoes_mm"]["espessura"] > 20      # continua fundo
+
+    # Rugosidade: variação média de z entre vértices vizinhos no topo
+    def aspereza(caminho):
+        m = trimesh.load(caminho, force="mesh")
+        a, b = m.edges_unique[:, 0], m.edges_unique[:, 1]
+        z = m.vertices[:, 2]
+        topo = (z[a] > 0.5) & (z[b] > 0.5)
+        return float(np.abs(z[a][topo] - z[b][topo]).mean())
+
+    assert aspereza(alto["output"]) < aspereza(raso["output"])
+
+
+def test_forma_respeita_o_piso_da_base(imagens):
+    """O detalhe não pode furar a base: nada abaixo de base_mm."""
+    r = _gerar(image_path=str(imagens / "foto.png"), modo="relevo", largura_mm=100,
+               espessura_max=25, base_mm=5, forma_mm=6, detalhe_mm=8, recorte=False)
+    mesh = trimesh.load(r["output"], force="mesh")
+    assert mesh.is_watertight
+    assert r["dimensoes_mm"]["espessura"] >= 5
+
+
 def test_avisos_de_impressao(imagens):
     """Parâmetros arriscados pra FDM viram aviso, não erro silencioso."""
     r = _gerar(image_path=str(imagens / "foto.png"), modo="litofania", espessura_min=0.1, espessura_max=0.5)
