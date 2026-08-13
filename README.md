@@ -80,6 +80,11 @@ Funciona com qualquer imagem (foto, logo, desenho). Diferente do `/api/face3d`, 
 
 A saída é sempre um sólido fechado (watertight), apoiado em z=0 e já na escala em mm.
 
+**Recorte de fundo.** Numa imagem sobre fundo liso, "claro = alto" faria o fundo virar a parte
+mais alta da peça. Por isso `relevo` e `profundidade` recortam o contorno do objeto por padrão,
+e a peça sai no formato dele. A `litofania` não recorta (é painel de luz, quer a placa inteira).
+Force com `recorte=true` ou desligue com `recorte=false`.
+
 ```bash
 # Via API
 curl -F "file=@foto.jpg" \
@@ -92,7 +97,7 @@ python scripts/imagem_para_stl.py logo.png --modo silhueta --espessura-max 5
 ```
 
 Parâmetros principais: `modo`, `largura_mm`, `altura_mm`, `espessura_max`, `espessura_min`,
-`base_mm`, `resolucao`, `inverter`, `suavizar`, `gamma`, `limiar`, `moldura_mm`, `formato`.
+`base_mm`, `resolucao`, `inverter`, `suavizar`, `gamma`, `limiar`, `moldura_mm`, `recorte`, `formato`.
 
 A resposta traz dimensões em mm, volume, contagem de corpos soltos e **avisos de impressão**
 (parede fina demais pro bico 0.4, detalhe abaixo da resolução da impressora, peça em partes soltas).

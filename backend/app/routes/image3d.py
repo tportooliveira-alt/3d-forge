@@ -24,6 +24,7 @@ async def image3d(
     gamma: float = Query(1.0, gt=0, le=5, description="Ajuste de contraste do relevo (<1 realça sombras)"),
     limiar: int = Query(128, ge=1, le=254, description="Limiar de corte da silhueta (0-255)"),
     moldura_mm: float = Query(0.0, ge=0, le=50, description="Borda sólida em volta, em mm"),
+    recorte: bool | None = Query(None, description="Recorta o fundo liso. Padrão: liga no relevo/profundidade, desliga na litofania"),
     formato: str = Query("stl", description="Saída: stl, obj, glb, ply, 3mf"),
 ):
     """Qualquer imagem → sólido imprimível (litofania, relevo, silhueta ou profundidade IA)."""
@@ -51,6 +52,7 @@ async def image3d(
         gamma=gamma,
         limiar=limiar,
         moldura_mm=moldura_mm,
+        recorte=recorte,
         formato=formato,
     )
 

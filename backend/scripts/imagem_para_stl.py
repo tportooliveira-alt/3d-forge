@@ -35,6 +35,11 @@ def main() -> int:
     p.add_argument("--gamma", type=float, default=1.0, help="Contraste do relevo (<1 realça sombras)")
     p.add_argument("--limiar", type=int, default=128, help="Limiar de corte da silhueta (0-255)")
     p.add_argument("--moldura", type=float, default=0.0, help="Borda sólida em volta, em mm")
+    grupo = p.add_mutually_exclusive_group()
+    grupo.add_argument("--recortar", dest="recorte", action="store_true", default=None,
+                       help="Força o recorte do fundo liso")
+    grupo.add_argument("--sem-recorte", dest="recorte", action="store_false",
+                       help="Mantém a placa retangular inteira")
     p.add_argument("--formato", default="stl", choices=["stl", "obj", "glb", "ply", "3mf"])
     p.add_argument("--saida", default=None, help="Caminho do arquivo de saída")
     args = p.parse_args()
@@ -55,6 +60,7 @@ def main() -> int:
         gamma=args.gamma,
         limiar=args.limiar,
         moldura_mm=args.moldura,
+        recorte=args.recorte,
         formato=args.formato,
     )
 

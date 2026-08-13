@@ -46,6 +46,7 @@ def gerar_modelo(
     gamma: float = 1.0,
     limiar: int = 128,
     moldura_mm: float = 0.0,
+    recorte: bool | None = None,
     formato: str = "stl",
 ) -> dict:
     """Converte uma imagem em malha 3D sólida e exporta pro formato pedido."""
@@ -62,7 +63,7 @@ def gerar_modelo(
         return {"job_id": job_id, "status": "error", "message": f"Formato '{fmt}' não suportado. Use: {FORMATOS}"}
 
     try:
-        cinza, alpha, orig_shape = _carregar_imagem(path, resolucao)
+        cinza, alpha, rgb, orig_shape = _carregar_imagem(path, resolucao)
     except Exception as e:
         return {"job_id": job_id, "status": "error", "message": f"Falha ao ler imagem: {e}"}
 
@@ -103,6 +104,7 @@ def gerar_modelo(
         campo = _reescalar(campo)
 
     # ── Construção da malha ───────────────────────────────────────────
+    usou_mascara = True
     if modo == "silhueta":
         mascara = _mascara_silhueta(cinza, alpha, limiar, inverter)
         if not mascara.any():
@@ -118,11 +120,28 @@ def gerar_modelo(
             valor = 1.0 - campo if inverter else campo
 
         altura_campo = e_min + valor * (e_max - e_min) + base
-        if moldura_mm > 0:
-            altura_campo = _aplicar_moldura(altura_campo, px_mm, moldura_mm, e_max + base)
 
-        mesh = _solido_do_heightmap(altura_campo, px_mm)
-        cobertura = 1.0
+        # Recorte: sem ele, um fundo branco vira a parte mais alta da peça.
+        # Litofania é painel de luz e quer a placa inteira, então só entra se for pedido.
+        auto_recorte = modo in ("relevo", "profundidade")
+        mascara_obj = None
+        if recorte is True or (recorte is None and auto_recorte):
+            mascara_obj = _mascara_objeto(rgb, cinza, alpha)
+            if mascara_obj is None and recorte is True:
+                avisos.append("Não achei fundo uniforme pra recortar — gerei a placa retangular inteira")
+
+        if mascara_obj is None:
+            usou_mascara = False
+            if moldura_mm > 0:
+                altura_campo = _aplicar_moldura(altura_campo, px_mm, moldura_mm, e_max + base)
+            mesh = _solido_do_heightmap(altura_campo, px_mm)
+            cobertura = 1.0
+        else:
+            if moldura_mm > 0:
+                avisos.append("Moldura ignorada: a peça foi recortada no contorno do objeto")
+            mesh = _extrudar_mascara(mascara_obj, px_mm, _alturas_de_canto(altura_campo, mascara_obj))
+            cobertura = float(mascara_obj.mean())
+            avisos.append(f"Fundo removido — a peça saiu no contorno do objeto ({cobertura:.0%} da imagem)")
 
     # ── Limpeza / correções ───────────────────────────────────────────
     mesh.merge_vertices()
@@ -134,8 +153,8 @@ def gerar_modelo(
 
     mesh.apply_translation(-mesh.bounds[0])  # apoia em z=0, canto na origem
 
-    # Heightmap é sempre um bloco só; só a silhueta pode sair em pedaços
-    corpos = len(mesh.split(only_watertight=False)) if modo == "silhueta" else 1
+    # Heightmap inteiro é sempre um bloco só; peça recortada em máscara pode sair em pedaços
+    corpos = len(mesh.split(only_watertight=False)) if usou_mascara else 1
 
     output_path = OUTPUTS_DIR / f"{job_id}_image3d.{fmt}"
     mesh.export(str(output_path), file_type=fmt)
@@ -190,8 +209,8 @@ def gerar_modelo(
 
 # ── Leitura e preparo da imagem ───────────────────────────────────────
 
-def _carregar_imagem(path: Path, resolucao: int) -> tuple[np.ndarray, np.ndarray | None, tuple]:
-    """Abre a imagem, corrige orientação EXIF e devolve (cinza, alpha, shape original)."""
+def _carregar_imagem(path: Path, resolucao: int) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, tuple]:
+    """Abre a imagem, corrige orientação EXIF e devolve (cinza, alpha, rgb, shape original)."""
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
 
@@ -203,6 +222,7 @@ def _carregar_imagem(path: Path, resolucao: int) -> tuple[np.ndarray, np.ndarray
         fundo = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
         img = Image.alpha_composite(fundo, rgba)
 
+    rgb = np.array(img.convert("RGB"), dtype=np.uint8)
     cinza = np.array(img.convert("L"), dtype=np.uint8)
     orig_shape = cinza.shape
 
@@ -212,10 +232,108 @@ def _carregar_imagem(path: Path, resolucao: int) -> tuple[np.ndarray, np.ndarray
         escala = resolucao / maior
         novo = (max(2, int(round(w * escala))), max(2, int(round(h * escala))))
         cinza = cv2.resize(cinza, novo, interpolation=cv2.INTER_AREA)
+        rgb = cv2.resize(rgb, novo, interpolation=cv2.INTER_AREA)
         if alpha is not None:
             alpha = cv2.resize(alpha, novo, interpolation=cv2.INTER_AREA)
 
-    return cinza, alpha, orig_shape
+    return cinza, alpha, rgb, orig_shape
+
+
+def _mascara_objeto(rgb: np.ndarray, cinza: np.ndarray, alpha: np.ndarray | None) -> np.ndarray | None:
+    """
+    Separa o objeto de um fundo liso (o típico render/foto sobre branco).
+    Devolve None quando não há fundo uniforme claro — aí a placa sai inteira.
+    """
+    if alpha is not None and (alpha < 250).mean() > 0.05:
+        return _limpar_mascara(alpha >= 128)
+
+    h, w = cinza.shape
+    borda = np.concatenate([cinza[0], cinza[-1], cinza[:, 0], cinza[:, -1]]).astype(np.float32)
+    if borda.mean() < 200 or borda.std() > 22:
+        return None  # borda escura ou bagunçada: não dá pra afirmar que é fundo
+
+    # Flood fill a partir das bordas, tolerante à sombra projetada
+    ff = np.zeros((h + 2, w + 2), np.uint8)
+    trabalho = cinza.copy()
+    tol = (22,)
+    passos = max(1, min(h, w) // 24)
+    sementes = (
+        [(x, 0) for x in range(0, w, passos)] + [(x, h - 1) for x in range(0, w, passos)]
+        + [(0, y) for y in range(0, h, passos)] + [(w - 1, y) for y in range(0, h, passos)]
+    )
+    for sx, sy in sementes:
+        if ff[sy + 1, sx + 1] == 0 and cinza[sy, sx] >= 200:
+            cv2.floodFill(trabalho, ff, (sx, sy), 0, tol, tol,
+                          cv2.FLOODFILL_MASK_ONLY | cv2.FLOODFILL_FIXED_RANGE | 8 | (255 << 8))
+
+    fundo = ff[1:-1, 1:-1] > 0
+    if fundo.mean() < 0.05 or fundo.mean() > 0.95:
+        return None
+
+    objeto = _limpar_mascara(~fundo)
+    if objeto is None or objeto.mean() < 0.15:
+        return None  # sobrou pouca coisa: provavelmente traço fino, não um objeto recortável
+
+    # Um objeto de verdade preenche boa parte da própria caixa. Um desenho de linha, não —
+    # e recortar no traço aqui daria uma peça frágil em vez da placa que o usuário espera.
+    ys, xs = np.nonzero(objeto)
+    caixa = (ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1)
+    if objeto.sum() / caixa < 0.35:
+        return None
+    return objeto
+
+
+def _corrigir_pinos(mascara: np.ndarray) -> np.ndarray:
+    """
+    Elimina células que se tocam só pela quina.
+    Nesse padrão as quatro paredes dividem a mesma aresta vertical — ela fica com 4 faces
+    em vez de 2 e a malha deixa de ser fechada. Preenche a quina pra virar contato de lado.
+    """
+    m = mascara.copy()
+    for _ in range(12):
+        a, b = m[:-1, :-1], m[:-1, 1:]
+        c, d = m[1:, :-1], m[1:, 1:]
+        p1 = a & d & ~b & ~c  # \ diagonal → preenche a célula de cima-direita
+        p2 = b & c & ~a & ~d  # / diagonal → preenche a célula de cima-esquerda
+        if not (p1.any() or p2.any()):
+            break
+        m[:-1, 1:] |= p1
+        m[:-1, :-1] |= p2
+    return m
+
+
+def _limpar_mascara(mascara: np.ndarray) -> np.ndarray | None:
+    """Mantém só o maior corpo e tapa os buracos internos — evita ilhas soltas na peça."""
+    m = mascara.astype(np.uint8)
+    n, rotulos, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+    if n <= 1:
+        return None
+    maior = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    m = (rotulos == maior).astype(np.uint8)
+
+    preenchido = m.copy()
+    buracos = np.zeros((m.shape[0] + 2, m.shape[1] + 2), np.uint8)
+    cv2.floodFill(preenchido, buracos, (0, 0), 1)  # o que sobrou em 0 é buraco interno
+    m = m | (preenchido == 0).astype(np.uint8)
+    return _corrigir_pinos(m.astype(bool))
+
+
+def _alturas_de_canto(altura: np.ndarray, mascara: np.ndarray) -> np.ndarray:
+    """
+    Alturas nos cantos das células (nr+1, nc+1): média das células vizinhas que são objeto.
+    É isso que deixa o topo da peça recortada seguir o relevo em vez de ser plano.
+    """
+    a = np.where(mascara, altura, 0.0).astype(np.float64)
+    m = mascara.astype(np.float64)
+    soma = np.zeros((altura.shape[0] + 1, altura.shape[1] + 1), dtype=np.float64)
+    peso = np.zeros_like(soma)
+    for di in (0, 1):
+        for dj in (0, 1):
+            fi = slice(di, di + altura.shape[0])
+            fj = slice(dj, dj + altura.shape[1])
+            soma[fi, fj] += a
+            peso[fi, fj] += m
+    return np.divide(soma, peso, out=np.zeros_like(soma), where=peso > 0)
 
 
 def _normalizar(cinza: np.ndarray) -> np.ndarray:
@@ -265,7 +383,7 @@ def _mascara_silhueta(cinza: np.ndarray, alpha: np.ndarray | None, limiar: int, 
         mascara = cinza < int(limiar)
     if inverter:
         mascara = ~mascara
-    return mascara
+    return _corrigir_pinos(mascara)
 
 
 def _aplicar_moldura(altura: np.ndarray, px_mm: float, moldura_mm: float, z_topo: float) -> np.ndarray:
@@ -347,11 +465,14 @@ def _solido_do_heightmap(altura: np.ndarray, px_mm: float) -> trimesh.Trimesh:
     return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
 
-def _extrudar_mascara(mascara: np.ndarray, px_mm: float, altura: float) -> trimesh.Trimesh:
+def _extrudar_mascara(mascara: np.ndarray, px_mm: float, altura: float | np.ndarray) -> trimesh.Trimesh:
     """
-    Máscara booleana → sólido extrudado.
+    Máscara booleana → sólido extrudado, com o contorno recortado na máscara.
     Cada célula marcada vira topo + fundo; paredes só nas fronteiras da máscara.
+    `altura` pode ser um escalar (extrusão reta, tipo logo) ou um mapa de altura
+    por canto, shape (nr+1, nc+1) — aí o topo segue o relevo.
     """
+    mascara = _corrigir_pinos(mascara)
     nr, nc = mascara.shape
     # Lattice de cantos: (nr+1) x (nc+1), em dois níveis (z=0 e z=altura)
     lc = nc + 1
@@ -360,8 +481,15 @@ def _extrudar_mascara(mascara: np.ndarray, px_mm: float, altura: float) -> trime
     gx, gy = np.meshgrid(xs, ys)
     n = (nr + 1) * lc
 
+    if np.isscalar(altura):
+        z_topo = np.full(n, float(altura))
+    else:
+        if altura.shape != (nr + 1, lc):
+            raise ValueError(f"altura por canto deve ter shape {(nr + 1, lc)}, veio {altura.shape}")
+        z_topo = np.maximum(altura.ravel(), 1e-3)
+
     base = np.column_stack([gx.ravel(), gy.ravel(), np.zeros(n)])
-    topo = np.column_stack([gx.ravel(), gy.ravel(), np.full(n, float(altura))])
+    topo = np.column_stack([gx.ravel(), gy.ravel(), z_topo])
     vertices = np.vstack([base, topo])
 
     def canto(i, j, nivel):
