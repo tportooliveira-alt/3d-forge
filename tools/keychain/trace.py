@@ -449,13 +449,20 @@ def _masked_blur(L: np.ndarray, mask: np.ndarray, sigma_px: float) -> np.ndarray
     return np.divide(num, den, out=np.zeros_like(num), where=den > 1e-3)
 
 
-def find_face(rgb: np.ndarray, skin_mask: np.ndarray, disc, mm_per_px: float,
-              p: Params) -> MultiPolygon:
-    """O rosto: a parte da pele acima da linha de sombra do queixo.
+def find_raised_skin(rgb: np.ndarray, skin_mask: np.ndarray, disc,
+                     mm_per_px: float, p: Params) -> MultiPolygon:
+    """As partes da pele que ficam POR CIMA de outra parte da pele.
 
-    Queixo e pescoco tem exatamente a mesma cromaticidade (a*~18, b*~26 dos
-    dois lados); o que os separa e uma queda de ~9 em L*. Detecta-se esse vale,
-    corta-se a pele nele e fica-se com o componente mais alto.
+    Na peca real, rosto, antebracos e maos sao placas sobrepostas ao pescoco e
+    as canelas. Mas todas tem exatamente a mesma cromaticidade (a*~18, b*~26):
+    o que separa uma da outra e uma queda de ~9 em L*, uma linha de SOMBRA. Um
+    tracador por cor e cego para isso e devolve tudo como um bloco unico -- era
+    por isso que o queixo nao aparecia.
+
+    Detecta-se o vale de sombra, corta-se a pele nele, e das partes resultantes
+    sobem as que tem outra parte logo ABAIXO. A luz do render vem de cima, entao
+    a sombra cai embaixo da aresta elevada: quem esta acima do vale e a placa de
+    cima. Isso vale igual para o queixo e para as maos.
     """
     L = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)[:, :, 0].astype(np.float32)
     skin = skin_mask > 0
@@ -469,21 +476,36 @@ def find_face(rgb: np.ndarray, skin_mask: np.ndarray, disc, mm_per_px: float,
     cut = (skin & ~(valley > 0)).astype(np.uint8)
     cut = cv2.morphologyEx(cut, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, stats, cent = cv2.connectedComponentsWithStats(cut, 8)
-    if n < 3:                      # sem corte nao ha rosto a destacar
+    if n < 3:
         return MultiPolygon()
 
-    min_px = 1.5 / (mm_per_px ** 2)
-    cands = [i for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= min_px]
-    if not cands:
+    min_px = 1.2 / (mm_per_px ** 2)
+    ids = [i for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= min_px]
+    if len(ids) < 2:
         return MultiPolygon()
-    face_id = min(cands, key=lambda i: cent[i][1])   # menor y = mais alto
 
-    m = ((lab == face_id).astype(np.uint8)) * 255
-    # Devolve o rosto crescido ate a metade do vale, para o degrau nascer no
-    # meio da linha de sombra e nao deixar um degrau duplo.
-    m = cv2.dilate(m, np.ones((3, 3), np.uint8))
-    polys = mask_to_polygons(m, disc, mm_per_px)
-    return clean_for_print(polys, p, 1.0)
+    # Alcance da busca: pouco mais que a espessura do vale.
+    reach = max(3, int(round(2.5 * p.shadow_sigma / mm_per_px)) | 1)
+    ker = np.ones((reach, reach), np.uint8)
+
+    raised = np.zeros(cut.shape, bool)
+    for i in ids:
+        comp = (lab == i).astype(np.uint8)
+        near = cv2.dilate(comp, ker) > 0
+        for j in ids:
+            if j == i:
+                continue
+            # y cresce para baixo na imagem: centroide maior = mais embaixo
+            if cent[j][1] <= cent[i][1]:
+                continue
+            if (near & (lab == j)).any():
+                raised |= comp > 0
+                break
+
+    if not raised.any():
+        return MultiPolygon()
+    m = cv2.dilate((raised.astype(np.uint8)) * 255, np.ones((3, 3), np.uint8))
+    return clean_for_print(mask_to_polygons(m, disc, mm_per_px), p, 1.0)
 
 
 def trace_artwork(image_path: str, p: Params,
@@ -529,7 +551,13 @@ def trace_artwork(image_path: str, p: Params,
     art = _resolve_overlaps(art)
 
     # Sub-regiao (nao e uma cor): o rosto, que ganha um degrau a mais em Z.
-    art["_face"] = find_face(rgb, masks["skin"], disc, mm_per_px, p)
+    # Recortado na propria pele: a dilatacao usada para achar as placas
+    # empurra a borda ~1px para fora, e esse fio invadia branco e roxo -- o QA
+    # de sobreposicao pegava, corretamente, alguns centesimos de mm2.
+    raised = find_raised_skin(rgb, masks["skin"], disc, mm_per_px, p)
+    if not raised.is_empty and not art.get("skin", MultiPolygon()).is_empty:
+        raised = as_multipolygon(raised.intersection(art["skin"]))
+    art["_face"] = raised
     return art
 
 

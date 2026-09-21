@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import PathPatch
 from matplotlib.path import Path
+from pathlib import Path as _P
+import cv2
 from shapely.geometry.polygon import orient
 
 from .build import _circle, artwork, base_outline
@@ -50,29 +52,52 @@ def draw_generated(ax, p: Params, art: dict) -> None:
 
 
 def render(p: Params, image_path: str, out_path: str,
-           zoom: str = "full") -> str:
-    """Gera o PNG de comparacao. `zoom` em {"full", "figura", "texto"}."""
+           zoom: str = "full", shaded: bool = True) -> str:
+    """Gera o PNG de comparacao. `zoom` em {"full", "figura", "texto", "cabeca"}.
+
+    Com `shaded` (o padrao) o lado gerado sai como render de relevo iluminado,
+    e nao cor chapada. A referencia e um objeto impresso e fotografado: comparar
+    relevo com relevo e a unica forma justa, e e a unica que mostra degraus como
+    o do queixo, que na cor chapada sao invisiveis.
+    """
+    from .build import build
+    from .preview import render_relief
+
     rgb = load_front_panel(image_path)
     cx, cy, r = find_disc(rgb)
-    art = artwork(p, image_path)
 
     windows = {
-        "full":   (-23, 23, -23, 23),
+        "full":   (-22.5, 22.5, -22.5, 22.5),
         "figura": (-15.5, 1.5, -8.5, 13.5),
+        "cabeca": (-9.5, -0.5, 3.5, 13.0),
         "texto":  (-19, 19, -19, -8),
     }
     x0, x1, y0, y1 = windows[zoom]
+
+    if shaded:
+        _, slabs = build(p, image_path, "mmu")
+        tmp = str(_P(out_path).with_suffix(".gen.png"))
+        ppm = max(24.0, 1100.0 / (x1 - x0))
+        render_relief(slabs, p, tmp, px_per_mm=ppm, window=(x0, x1, y0, y1))
+        gen = cv2.imread(tmp)[:, :, ::-1]
+        _P(tmp).unlink(missing_ok=True)
+    else:
+        gen = None
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 15 * (y1 - y0) / (2 * (x1 - x0))))
     scale = p.radius / r
     extent = [(0 - cx) * scale, (rgb.shape[1] - cx) * scale,
               (cy - rgb.shape[0]) * scale, cy * scale]
     axes[0].imshow(rgb, extent=extent, origin="upper", interpolation="lanczos")
-    axes[0].set_title("REFERENCIA (real)", fontsize=13)
+    axes[0].set_title("REFERENCIA (peca real)", fontsize=13)
 
-    axes[1].set_facecolor("#ffffff")
-    draw_generated(axes[1], p, art)
-    axes[1].set_title("GERADO (vetores que viram STL)", fontsize=13)
+    if gen is not None:
+        axes[1].imshow(gen, extent=[x0, x1, y0, y1], origin="upper",
+                       interpolation="lanczos")
+    else:
+        axes[1].set_facecolor("#ffffff")
+        draw_generated(axes[1], p, artwork(p, image_path))
+    axes[1].set_title("GERADO (relevo dos STLs, iluminado)", fontsize=13)
 
     for a in axes:
         a.set_xlim(x0, x1)
