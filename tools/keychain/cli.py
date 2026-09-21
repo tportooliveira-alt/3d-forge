@@ -48,8 +48,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     t.add_argument("--text-tracking", type=float, dest="text_tracking")
 
     pr = ap.add_argument_group("impressao")
-    pr.add_argument("--colors", type=int, choices=[4, 5], dest="n_colors",
-                    help="5 = paleta cheia; 4 funde o cabelo no roxo (AMS de 4 slots)")
+    pr.add_argument("--colors", type=int, choices=[1, 2, 3, 4, 5], dest="n_colors",
+                    help="quantas pecas/filamentos. 5 = paleta cheia; 1 = uma "
+                         "peca so, monocromatica, o desenho fica por conta do "
+                         "relevo. Ver params.color_groups para a ordem das fusoes")
     pr.add_argument("--clearance", type=float)
     pr.add_argument("--pocket-depth", type=float, dest="pocket_depth")
     pr.add_argument("--min-feature", type=float, dest="min_feature")

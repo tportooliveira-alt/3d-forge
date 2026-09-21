@@ -105,6 +105,40 @@ def full_check(meshes: dict[str, trimesh.Trimesh], slabs: dict[str, list[Slab]],
 # ---------------------------------------------------------------------------
 # Prontidao para o fatiador
 # ---------------------------------------------------------------------------
+def _roundtrip(mesh: trimesh.Trimesh, name: str,
+               errors: list[str]) -> trimesh.Trimesh:
+    """Grava e rele a malha, e devolve o que saiu do disco."""
+    import os
+    import tempfile
+
+    import numpy as np
+
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as fh:
+        path = fh.name
+    try:
+        mesh.export(path)
+        back = trimesh.load(path)
+    except Exception as exc:
+        errors.append(f"{name}: falhou gravar/reler ({exc})")
+        return mesh
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    edges = back.edges_sorted.reshape(-1, 2)
+    _, counts = np.unique(edges, axis=0, return_counts=True)
+    ruins = int((counts != 2).sum())
+    if ruins:
+        errors.append(f"{name}: {ruins} arestas nao-variedade depois de gravar "
+                      f"(aresta com 4 faces = duas superficies coladas)")
+    if abs(back.volume - mesh.volume) > 1e-3:
+        errors.append(f"{name}: volume mudou ao gravar "
+                      f"({mesh.volume:.4f} -> {back.volume:.4f} mm3)")
+    return back
+
+
 def check_slicer_ready(meshes: dict[str, trimesh.Trimesh]) -> tuple[list[str], list[str]]:
     """Checagens que decidem se o arquivo entra limpo num fatiador.
 
@@ -114,6 +148,13 @@ def check_slicer_ready(meshes: dict[str, trimesh.Trimesh]) -> tuple[list[str], l
 
     errors: list[str] = []
     notes: list[str] = []
+
+    # Valida o ARQUIVO, nao o objeto em memoria. Duas vezes neste projeto uma
+    # malha integra em memoria voltou aberta do disco: uma por faces de area
+    # zero que sobreviveram a gravacao, outra por contato face a face que virou
+    # aresta de 4 faces quando o leitor soldou os vertices. O fatiador le o
+    # arquivo.
+    meshes = {n: _roundtrip(m, n, errors) for n, m in meshes.items()}
 
     for name, m in sorted(meshes.items()):
         if not m.is_volume:
@@ -143,7 +184,14 @@ def check_slicer_ready(meshes: dict[str, trimesh.Trimesh]) -> tuple[list[str], l
                 errors.append(f"{a} x {b} se interpenetram em {vol:.4f} mm3")
 
     # Uniao == soma dos volumes: se bater, nao ha vao nem sobreposicao em lugar
-    # nenhum. E o teste mais forte do conjunto, numa linha so.
+    # nenhum. E o teste mais forte do conjunto, numa linha so. Com uma peca so
+    # nao ha o que unir, e o engine ainda remalha de leve -- comparar a peca
+    # consigo mesma daria um falso positivo.
+    if len(meshes) < 2:
+        m = next(iter(meshes.values()))
+        notes.append(f"peca unica: {m.volume:.1f} mm3, {len(m.faces)} faces, "
+                     f"watertight={m.is_watertight}")
+        return errors, notes
     try:
         union = trimesh.boolean.union(list(meshes.values()), engine="manifold")
         total = sum(m.volume for m in meshes.values())

@@ -101,7 +101,7 @@ class Params:
     trace_tolerance: float = 34.0  # distancia maxima em cromaticidade LAB
     shadow_thr: float = 5.0        # profundidade minima do vale de sombra (L*)
     shadow_sigma: float = 0.7      # raio (mm) do borrao que estima o fundo local
-    n_colors: int = 5              # 5 = paleta cheia; 4 funde cabelo no roxo
+    n_colors: int = 5              # 5..1 pecas; ver color_groups/art_levels
 
     arc_segments: int = 512        # resolucao angular dos circulos
 
@@ -168,7 +168,7 @@ class Params:
 
     @property
     def total_height(self) -> float:
-        return max(self.z_face_top, self.z_rim_top)
+        return max(self.z_art_max, self.z_rim_top)
 
     @property
     def tab_hole_center_y(self) -> float:
@@ -182,16 +182,62 @@ class Params:
 
     @property
     def color_groups(self) -> dict[str, tuple[str, ...]]:
-        """Cor final -> grupos de cor tracados que ela absorve."""
-        if self.n_colors >= 5:
+        """Cor final -> grupos de cor tracados que ela absorve.
+
+        Reduzir peca nao e so juntar cor: a fronteira entre duas cores fundidas
+        desapareceria. Por isso cada grupo fundido recebe uma ALTURA propria
+        (ver art_levels) e a arte continua legivel em relevo, mesmo com um
+        filamento so.
+
+        A ordem das fusoes segue o que menos custa ao desenho:
+          5 -> 4  o preto vira roxo (ja e quase preto sobre campo roxo)
+          4 -> 3  a pele vira branco (rosto e quimono na mesma cor, como um
+                  desenho de uma cor so; o degrau do queixo segura a forma)
+          3 -> 2  o rosa vira branco, e so o relevo distingue faixa e quimono
+          2 -> 1  tudo vira roxo: monocromatico, so relevo
+        """
+        n = max(1, min(5, self.n_colors))
+        if n == 5:
             return {c: (c,) for c in PALETTE}
-        # 4 cores: cabelo vira roxo (e quase preto e encosta no campo roxo)
-        return {
-            "purple": ("purple", "hair"),
-            "white": ("white",),
-            "pink": ("pink",),
-            "skin": ("skin",),
-        }
+        if n == 4:
+            return {"purple": ("purple", "hair"), "white": ("white",),
+                    "pink": ("pink",), "skin": ("skin",)}
+        if n == 3:
+            return {"purple": ("purple", "hair"), "white": ("white", "skin"),
+                    "pink": ("pink",)}
+        if n == 2:
+            return {"purple": ("purple", "hair"),
+                    "white": ("white", "skin", "pink")}
+        return {"purple": ("purple", "hair", "white", "skin", "pink")}
+
+    @property
+    def art_levels(self) -> dict[str, float]:
+        """Altura de cada grupo tracado acima do campo, em mm.
+
+        Com 5 filamentos a cor ja separa tudo e o relevo pode ser plano. Quanto
+        menos filamento, mais o desenho depende do degrau: os grupos que foram
+        fundidos recebem alturas distintas, escalonadas em multiplos da altura
+        de camada para nao sairem borradas no fatiamento.
+        """
+        n = max(1, min(5, self.n_colors))
+        step = max(self.layer_height * 2, 0.24)
+        if n >= 4:
+            return {k: self.art_h for k in PALETTE}
+        if n == 3:      # pele fundida no branco: o rosto precisa se destacar
+            return {"white": self.art_h, "pink": self.art_h + step,
+                    "skin": self.art_h + step, "hair": self.art_h,
+                    "purple": self.art_h}
+        if n == 2:      # rosa tambem: faixa mais alta que o quimono
+            return {"white": self.art_h, "skin": self.art_h + step,
+                    "pink": self.art_h + 2 * step, "hair": self.art_h,
+                    "purple": self.art_h}
+        return {"hair": self.art_h, "white": self.art_h + step,
+                "skin": self.art_h + 2 * step, "pink": self.art_h + 3 * step,
+                "purple": self.art_h}
+
+    @property
+    def z_art_max(self) -> float:
+        return self.z_field_top + max(self.art_levels.values()) + self.face_lift
 
     def with_overrides(self, **kwargs) -> "Params":
         clean = {k: v for k, v in kwargs.items() if v is not None}
