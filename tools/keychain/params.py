@@ -75,9 +75,11 @@ class Params:
     # ---------------- Aneis concentricos ----------------
     # Guardados como FRACAO do raio, e nao em mm, para que --diameter escale a
     # peca inteira. Medidos no render com o disco normalizado a Q40mm:
-    # campo r=17.8mm e sulco r=18.4mm, ou seja 0.890 e 0.920 do raio.
-    field_ratio: float = 0.890
-    groove_ratio: float = 0.920
+    # Remedidos na referencia de 2000x2000 (46.7 px/mm): no perfil radial de L*
+    # o topo do campo vai ate r=17.4, o fundo do sulco fica em 18.05 e o aro
+    # sobe a partir de 18.6 -- ou seja 0.872 e 0.930 do raio.
+    field_ratio: float = 0.872
+    groove_ratio: float = 0.930
 
     # ---------------- Texto ----------------
     text: str = "MULHERES NO TATAME"

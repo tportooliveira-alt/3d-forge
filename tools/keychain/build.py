@@ -105,6 +105,16 @@ def artwork(p: Params, image_path: str) -> dict[str, MultiPolygon]:
         art["white"] = as_multipolygon(art["white"].difference(gap))
     art["white"] = as_multipolygon(
         unary_union([art.get("white", MultiPolygon()), text]))
+
+    # As placas elevadas sao recortadas na cor JA finalizada. Recortar antes
+    # deixava um fio para fora -- o branco ainda perdia o preto e a folga do
+    # texto depois -- e o QA de sobreposicao pegava, certeiro.
+    for key, color in (("_raised_skin", "skin"), ("_raised_white", "white")):
+        up = art.get(key)
+        if up is None or up.is_empty or art.get(color, MultiPolygon()).is_empty:
+            art[key] = MultiPolygon()
+            continue
+        art[key] = as_multipolygon(up.intersection(art[color]))
     return art
 
 
@@ -162,11 +172,13 @@ def build_slabs_mmu(p: Params, art: dict[str, MultiPolygon]) -> dict[str, list[S
             continue
         slabs[color].append(Slab(geom, p.z_base_top, p.z_art_top))
 
-    # O rosto sobe um degrau a mais. Mesma cor da pele, so mais alto: e assim
-    # que o queixo ganha uma aresta e para de se fundir com o pescoco.
-    face = art.get("_face")
-    if face is not None and not face.is_empty and "skin" in slabs:
-        slabs["skin"].append(Slab(face, p.z_base_top, p.z_face_top))
+    # As placas de cima sobem um degrau. Mesma cor, so mais altas: e assim que
+    # o queixo ganha aresta em vez de se fundir com o pescoco, e que a manga
+    # passa a ler como estando por cima do joelho.
+    for key, color in (("_raised_skin", "skin"), ("_raised_white", "white")):
+        up = art.get(key)
+        if up is not None and not up.is_empty and color in slabs:
+            slabs[color].append(Slab(up, p.z_base_top, p.z_face_top))
 
     # No modo 4 cores o preto vira roxo, mas continua em relevo.
     if p.n_colors < 5:
@@ -213,9 +225,9 @@ def build_slabs_glue(p: Params, art: dict[str, MultiPolygon]
     ]
     if not absorbed.is_empty:
         purple.append(Slab(as_multipolygon(absorbed), p.z_base_top, p.z_art_top))
-        face = art.get("_face")
-        if face is not None and not face.is_empty:
-            purple.append(Slab(face, p.z_base_top, p.z_face_top))
+        up = art.get("_raised_skin")
+        if up is not None and not up.is_empty:
+            purple.append(Slab(up, p.z_base_top, p.z_face_top))
 
     slabs: dict[str, list[Slab]] = {"purple": purple}
     for color, geom in inserts.items():

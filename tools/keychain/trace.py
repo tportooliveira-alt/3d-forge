@@ -449,8 +449,8 @@ def _masked_blur(L: np.ndarray, mask: np.ndarray, sigma_px: float) -> np.ndarray
     return np.divide(num, den, out=np.zeros_like(num), where=den > 1e-3)
 
 
-def find_raised_skin(rgb: np.ndarray, skin_mask: np.ndarray, disc,
-                     mm_per_px: float, p: Params) -> MultiPolygon:
+def find_raised(rgb: np.ndarray, mask: np.ndarray, disc, mm_per_px: float,
+                p: Params, anchor: np.ndarray | None = None) -> MultiPolygon:
     """As partes da pele que ficam POR CIMA de outra parte da pele.
 
     Na peca real, rosto, antebracos e maos sao placas sobrepostas ao pescoco e
@@ -465,7 +465,16 @@ def find_raised_skin(rgb: np.ndarray, skin_mask: np.ndarray, disc,
     cima. Isso vale igual para o queixo e para as maos.
     """
     L = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)[:, :, 0].astype(np.float32)
-    skin = skin_mask > 0
+    skin = mask > 0
+    if anchor is not None:
+        # So os pedacos da mascara que encostam na ancora. Para o quimono a
+        # ancora e a pele: assim o "M" e as letras do texto, que tambem sao
+        # brancos mas sao elementos soltos e nao placas sobrepostas, ficam de
+        # fora e nao ganham degrau nenhum.
+        n, lab, _, _ = cv2.connectedComponentsWithStats(skin.astype(np.uint8), 8)
+        near = cv2.dilate(anchor.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+        keep = {int(v) for v in np.unique(lab[near & skin]) if v > 0}
+        skin = np.isin(lab, list(keep)) if keep else np.zeros_like(skin)
     if not skin.any():
         return MultiPolygon()
 
@@ -554,10 +563,13 @@ def trace_artwork(image_path: str, p: Params,
     # Recortado na propria pele: a dilatacao usada para achar as placas
     # empurra a borda ~1px para fora, e esse fio invadia branco e roxo -- o QA
     # de sobreposicao pegava, corretamente, alguns centesimos de mm2.
-    raised = find_raised_skin(rgb, masks["skin"], disc, mm_per_px, p)
-    if not raised.is_empty and not art.get("skin", MultiPolygon()).is_empty:
-        raised = as_multipolygon(raised.intersection(art["skin"]))
-    art["_face"] = raised
+    # Recortadas na cor correspondente so depois, em build.artwork: aqui o
+    # branco ainda vai encolher (perde o preto e a folga do texto).
+    art["_raised_skin"] = find_raised(rgb, masks["skin"], disc, mm_per_px, p)
+    # O quimono tem o mesmo empilhamento: a manga passa por cima do joelho, e a
+    # divisa entre eles tambem e so sombra.
+    art["_raised_white"] = find_raised(rgb, masks["white"], disc, mm_per_px, p,
+                                       anchor=masks["skin"] > 0)
     return art
 
 
