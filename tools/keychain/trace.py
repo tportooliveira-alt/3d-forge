@@ -58,12 +58,29 @@ SWATCHES: tuple[Swatch, ...] = (
 # Localizacao do disco
 # ---------------------------------------------------------------------------
 def load_front_panel(path: str) -> np.ndarray:
-    """Le a imagem de referencia e recorta o painel da vista frontal (RGB)."""
+    """Le a referencia e devolve a vista frontal em RGB.
+
+    Aceita as duas formas: a prancha de 4 vistas (recorta o painel frontal) e
+    uma imagem que ja e so o medalhao (usa inteira).
+    """
     bgr = cv2.imread(path, cv2.IMREAD_COLOR)
     if bgr is None:
         raise FileNotFoundError(f"nao consegui abrir {path}")
-    x0, y0, x1, y1 = FRONT_PANEL
-    return np.ascontiguousarray(bgr[y0:y1, x0:x1, ::-1])
+    if _is_contact_sheet(bgr):
+        x0, y0, x1, y1 = FRONT_PANEL
+        bgr = bgr[y0:y1, x0:x1]
+    return np.ascontiguousarray(bgr[:, :, ::-1])
+
+
+def _is_contact_sheet(bgr: np.ndarray) -> bool:
+    """Prancha de varias vistas: o medalhao ocupa pouco da largura."""
+    h, w = bgr.shape[:2]
+    m = _silhouette(np.ascontiguousarray(bgr[:, :, ::-1]))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(m, 8)
+    if n < 2:
+        return False
+    big = stats[1:, cv2.CC_STAT_AREA].max()
+    return big < 0.34 * h * w
 
 
 def _silhouette(rgb: np.ndarray) -> np.ndarray:
@@ -75,14 +92,16 @@ def _silhouette(rgb: np.ndarray) -> np.ndarray:
     return cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
 
 
-def find_disc(rgb: np.ndarray, open_kernel: int = 41) -> tuple[float, float, float]:
+def find_disc(rgb: np.ndarray, open_kernel: int = 0) -> tuple[float, float, float]:
     """Centro e raio do disco em pixels.
 
     A abertura morfologica com nucleo grande elimina o pescoco fino da aba, de
     modo que a elipse ajustada descreve o disco e nao a silhueta inteira.
     """
+    h, w = rgb.shape[:2]
     m = _silhouette(rgb)
-    ker = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_kernel, open_kernel))
+    k = open_kernel if open_kernel else max(3, int(min(h, w) * 0.09) | 1)
+    ker = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
     disc = cv2.morphologyEx(m, cv2.MORPH_OPEN, ker)
     n, lab, stats, _ = cv2.connectedComponentsWithStats(disc, 8)
     if n < 2:
@@ -90,11 +109,27 @@ def find_disc(rgb: np.ndarray, open_kernel: int = 41) -> tuple[float, float, flo
     i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
     cnts, _ = cv2.findContours((lab == i).astype(np.uint8), cv2.RETR_EXTERNAL,
                                cv2.CHAIN_APPROX_NONE)
-    c = max(cnts, key=cv2.contourArea)
-    (cx, cy), _ = cv2.minEnclosingCircle(c)
-    # raio equivalente em area: mais estavel que o circulo minimo envolvente,
-    # que e puxado por qualquer serrilhado do contorno.
-    r = float(np.sqrt(cv2.contourArea(c) / np.pi))
+    pts = max(cnts, key=cv2.contourArea).reshape(-1, 2).astype(np.float64)
+
+    # Descarta os pontos encostados na moldura: numa imagem em que o disco sai
+    # cortado, sao eles que puxam o ajuste e fazem o circulo virar elipse.
+    pad = max(2.0, 0.004 * min(h, w))
+    keep = ((pts[:, 0] > pad) & (pts[:, 0] < w - 1 - pad) &
+            (pts[:, 1] > pad) & (pts[:, 1] < h - 1 - pad))
+    if keep.sum() >= 0.2 * len(pts):
+        pts = pts[keep]
+
+    return _fit_circle(pts)
+
+
+def _fit_circle(pts: np.ndarray) -> tuple[float, float, float]:
+    """Ajuste de circulo por minimos quadrados (Kasa): linear e estavel."""
+    x, y = pts[:, 0], pts[:, 1]
+    A = np.column_stack([x, y, np.ones(len(x))])
+    b = x ** 2 + y ** 2
+    sol, *_ = np.linalg.lstsq(A, b, rcond=None)
+    cx, cy = sol[0] / 2.0, sol[1] / 2.0
+    r = float(np.sqrt(max(sol[2] + cx ** 2 + cy ** 2, 1e-12)))
     return float(cx), float(cy), r
 
 

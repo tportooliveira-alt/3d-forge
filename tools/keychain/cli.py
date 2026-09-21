@@ -15,7 +15,7 @@ from .params import Params
 from .preview import render
 from .validate import full_check
 
-DEFAULT_IMAGE = "tools/keychain/assets/ref_render.jpg"
+DEFAULT_IMAGE = "tools/keychain/assets/ref_hires.webp"
 DEFAULT_OUT = "tools/keychain/out"
 
 
