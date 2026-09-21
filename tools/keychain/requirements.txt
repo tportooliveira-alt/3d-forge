@@ -1,0 +1,13 @@
+# Dependencias do gerador de chaveiro (venv dedicado em tools/keychain/.venv).
+# Isolado de backend/requirements.txt de proposito: aqui usamos trimesh 5.x e
+# shapely, que o servidor nao precisa carregar.
+#
+# ATENCAO: numpy >= 2.5 exige Python >= 3.12. Este ambiente roda 3.11.
+numpy==2.4.6
+shapely==2.1.2
+trimesh==5.1.0
+mapbox-earcut==2.1.0
+pillow==12.3.0
+matplotlib==3.11.2
+opencv-python-headless==5.0.0.93
+manifold3d==3.5.3

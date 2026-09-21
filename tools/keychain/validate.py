@@ -1,0 +1,102 @@
+"""QA das malhas antes de exportar. Falha o build se algo nao for imprimivel."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import trimesh
+from shapely.ops import unary_union
+
+from .build import Slab
+from .params import Params
+
+
+@dataclass
+class Report:
+    errors: list[str]
+    warnings: list[str]
+    rows: list[tuple[str, bool, float, tuple[float, float, float], int]]
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+
+def check_meshes(meshes: dict[str, trimesh.Trimesh], p: Params) -> Report:
+    errors: list[str] = []
+    warnings: list[str] = []
+    rows = []
+    for name, m in sorted(meshes.items()):
+        ext = tuple(float(v) for v in m.extents)
+        rows.append((name, bool(m.is_watertight), float(m.volume), ext,
+                     int(len(m.faces))))
+        if not m.is_watertight:
+            errors.append(f"{name}: malha nao e watertight")
+        if m.volume <= 0:
+            errors.append(f"{name}: volume nao positivo ({m.volume:.3f})")
+        zmax = float(m.bounds[1][2])
+        if zmax > p.total_height + 1e-6:
+            errors.append(f"{name}: topo em z={zmax:.3f} acima do esperado "
+                          f"({p.total_height:.3f})")
+        if float(m.bounds[0][2]) < -1e-6:
+            errors.append(f"{name}: geometria abaixo de z=0")
+    return Report(errors, warnings, rows)
+
+
+def check_no_overlap(slabs: dict[str, list[Slab]], tol: float = 1e-6) -> list[str]:
+    """Verifica em 2D que cores diferentes nao se sobrepoem em Z.
+
+    Feito em 2D de proposito: booleano 3D entre malhas e caro e nada confiavel
+    para detectar interpenetracao. Aqui basta, para cada par de camadas cujas
+    faixas de Z se cruzam, medir a area de intersecao dos poligonos.
+    """
+    errors: list[str] = []
+    flat = [(c, s) for c, items in slabs.items() for s in items]
+    for i in range(len(flat)):
+        ci, si = flat[i]
+        for j in range(i + 1, len(flat)):
+            cj, sj = flat[j]
+            if ci == cj:
+                continue
+            lo, hi = max(si.z0, sj.z0), min(si.z1, sj.z1)
+            if hi - lo <= tol:          # faixas de Z nao se cruzam
+                continue
+            if si.geom.is_empty or sj.geom.is_empty:
+                continue
+            a = si.geom.intersection(sj.geom).area
+            if a > 1e-3:
+                errors.append(
+                    f"sobreposicao {ci} x {cj}: {a:.4f} mm^2 "
+                    f"na faixa z {lo:.2f}-{hi:.2f}")
+    return errors
+
+
+def check_printability(slabs: dict[str, list[Slab]], p: Params) -> list[str]:
+    warnings: list[str] = []
+    if p.art_h < 2 * p.layer_height:
+        warnings.append(
+            f"relevo da arte ({p.art_h}mm) tem menos de 2 camadas de "
+            f"{p.layer_height}mm")
+    # Detalhe mais fino que o bico: uma erosao de min_feature/2 nao pode zerar
+    # uma cor inteira.
+    for color, items in slabs.items():
+        geom = unary_union([s.geom for s in items if not s.geom.is_empty])
+        if geom.is_empty:
+            continue
+        eroded = geom.buffer(-p.min_feature / 2.0, quad_segs=8)
+        if eroded.is_empty:
+            warnings.append(
+                f"{color}: toda a geometria e mais fina que {p.min_feature}mm")
+        elif eroded.area < geom.area * 0.25:
+            warnings.append(
+                f"{color}: {100 * (1 - eroded.area / geom.area):.0f}% da area "
+                f"esta perto do limite de {p.min_feature}mm")
+    return warnings
+
+
+def full_check(meshes: dict[str, trimesh.Trimesh], slabs: dict[str, list[Slab]],
+               p: Params) -> Report:
+    rep = check_meshes(meshes, p)
+    rep.errors.extend(check_no_overlap(slabs))
+    rep.warnings.extend(check_printability(slabs, p))
+    return rep

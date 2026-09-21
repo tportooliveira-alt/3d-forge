@@ -13,3 +13,7 @@ outputs/
 midas_lib/
 hub/
 serviceAccountKey.json
+
+# Gerador de chaveiro
+tools/keychain/out/
+tools/keychain/.venv/
