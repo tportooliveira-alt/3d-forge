@@ -55,10 +55,10 @@ class Params:
 
     # ---------------- Silhueta ----------------
     diameter: float = 40.0           # diametro externo do disco
-    hole_diameter: float = 4.0       # furo da argola
-    tab_width: float = 10.5          # largura do "pescoco" da aba
-    tab_boss_diameter: float = 10.0  # diametro do ressalto (medido: 9.2-10.0)
-    tab_center_offset: float = 1.5   # centro do furo acima da borda (medido: +21.5mm)
+    hole_diameter: float = 4.0       # furo da argola (absoluto: e uma argola real)
+    tab_width_ratio: float = 0.2625   # 10.5mm em Q40
+    tab_boss_ratio: float = 0.25      # 10.0mm em Q40
+    tab_offset_ratio: float = 0.0375  # 1.5mm em Q40
 
     # ---------------- Pilha em Z (costas planas em z=0) ----------------
     base_h: float = 3.0       # z 0.0 -> 3.0   disco base + aba
@@ -67,14 +67,18 @@ class Params:
     rim_h: float = 1.45       # z 3.0 -> 4.45  aro externo (ligeiramente + alto)
     art_h: float = 1.0        # +1.0 sobre o campo: figura, "M" e texto
 
-    # ---------------- Aneis concentricos (medidos no render) ----------------
-    field_radius: float = 17.8    # campo interno elevado
-    groove_outer: float = 18.4    # fim do sulco / inicio do aro
+    # ---------------- Aneis concentricos ----------------
+    # Guardados como FRACAO do raio, e nao em mm, para que --diameter escale a
+    # peca inteira. Medidos no render com o disco normalizado a Q40mm:
+    # campo r=17.8mm e sulco r=18.4mm, ou seja 0.890 e 0.920 do raio.
+    field_ratio: float = 0.890
+    groove_ratio: float = 0.920
 
     # ---------------- Texto ----------------
     text: str = "MULHERES NO TATAME"
-    text_baseline_radius: float = 16.05  # medido (base no raio externo)
-    text_cap_height: float = 3.05        # medido
+    # Tambem em fracao do raio: medidos como 16.05mm e 3.05mm em Q40mm.
+    text_baseline_ratio: float = 0.8025
+    text_cap_ratio: float = 0.1525
     text_tracking: float = 1.06          # multiplicador do avanco entre letras
     text_xscale: float = 0.92            # compressao horizontal (simula condensada)
     font_path: str = "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
@@ -98,8 +102,36 @@ class Params:
         return self.diameter / 2.0
 
     @property
+    def tab_width(self) -> float:
+        return self.radius * 2 * self.tab_width_ratio
+
+    @property
+    def tab_boss_diameter(self) -> float:
+        return self.radius * 2 * self.tab_boss_ratio
+
+    @property
+    def tab_center_offset(self) -> float:
+        return self.radius * 2 * self.tab_offset_ratio
+
+    @property
     def hole_radius(self) -> float:
         return self.hole_diameter / 2.0
+
+    @property
+    def field_radius(self) -> float:
+        return self.radius * self.field_ratio
+
+    @property
+    def groove_outer(self) -> float:
+        return self.radius * self.groove_ratio
+
+    @property
+    def text_baseline_radius(self) -> float:
+        return self.radius * self.text_baseline_ratio
+
+    @property
+    def text_cap_height(self) -> float:
+        return self.radius * self.text_cap_ratio
 
     @property
     def z_base_top(self) -> float:

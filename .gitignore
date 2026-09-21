@@ -17,3 +17,4 @@ serviceAccountKey.json
 # Gerador de chaveiro
 tools/keychain/out/
 tools/keychain/.venv/
+tools/keychain/out50/
