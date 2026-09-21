@@ -11,3 +11,5 @@ pillow==12.3.0
 matplotlib==3.11.2
 opencv-python-headless==5.0.0.93
 manifold3d==3.5.3
+scipy==1.17.1
+rtree==1.4.1

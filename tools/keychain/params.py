@@ -66,6 +66,11 @@ class Params:
     field_h: float = 1.25     # z 3.0 -> 4.25  campo interno elevado
     rim_h: float = 1.45       # z 3.0 -> 4.45  aro externo (ligeiramente + alto)
     art_h: float = 1.0        # +1.0 sobre o campo: figura, "M" e texto
+    # O rosto sobe um degrau a mais que o pescoco. Na referencia o queixo so
+    # aparece porque o rosto e uma placa elevada -- a divisa entre queixo e
+    # pescoco e uma linha de SOMBRA, nao de cor, e um tracador por cor e cego
+    # para ela. Sem este degrau, rosto e pescoco saem como um bloco unico.
+    face_lift: float = 0.35
 
     # ---------------- Aneis concentricos ----------------
     # Guardados como FRACAO do raio, e nao em mm, para que --diameter escale a
@@ -92,6 +97,8 @@ class Params:
 
     # ---------------- Traçado ----------------
     trace_tolerance: float = 34.0  # distancia maxima em cromaticidade LAB
+    shadow_thr: float = 5.0        # profundidade minima do vale de sombra (L*)
+    shadow_sigma: float = 0.7      # raio (mm) do borrao que estima o fundo local
     n_colors: int = 5              # 5 = paleta cheia; 4 funde cabelo no roxo
 
     arc_segments: int = 512        # resolucao angular dos circulos
@@ -154,8 +161,12 @@ class Params:
         return self.z_field_top + self.art_h
 
     @property
+    def z_face_top(self) -> float:
+        return self.z_art_top + self.face_lift
+
+    @property
     def total_height(self) -> float:
-        return max(self.z_art_top, self.z_rim_top)
+        return max(self.z_face_top, self.z_rim_top)
 
     @property
     def tab_hole_center_y(self) -> float:

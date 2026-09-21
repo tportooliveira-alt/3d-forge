@@ -436,6 +436,56 @@ def clean_for_print(polys: list[Polygon], p: Params,
 # ---------------------------------------------------------------------------
 # Entrada principal
 # ---------------------------------------------------------------------------
+def _masked_blur(L: np.ndarray, mask: np.ndarray, sigma_px: float) -> np.ndarray:
+    """Media local de L calculada SO sobre `mask` (convolucao normalizada).
+
+    Um blur comum puxaria o cabelo escuro em volta do rosto e o fundo local
+    sairia mais escuro que o proprio rosto -- o vale do queixo ficava com sinal
+    invertido e nunca era detectado.
+    """
+    m = mask.astype(np.float32)
+    num = cv2.GaussianBlur(L * m, (0, 0), sigma_px)
+    den = cv2.GaussianBlur(m, (0, 0), sigma_px)
+    return np.divide(num, den, out=np.zeros_like(num), where=den > 1e-3)
+
+
+def find_face(rgb: np.ndarray, skin_mask: np.ndarray, disc, mm_per_px: float,
+              p: Params) -> MultiPolygon:
+    """O rosto: a parte da pele acima da linha de sombra do queixo.
+
+    Queixo e pescoco tem exatamente a mesma cromaticidade (a*~18, b*~26 dos
+    dois lados); o que os separa e uma queda de ~9 em L*. Detecta-se esse vale,
+    corta-se a pele nele e fica-se com o componente mais alto.
+    """
+    L = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)[:, :, 0].astype(np.float32)
+    skin = skin_mask > 0
+    if not skin.any():
+        return MultiPolygon()
+
+    bg = _masked_blur(L, skin, p.shadow_sigma / mm_per_px)
+    valley = ((bg - L) > p.shadow_thr) & skin
+    valley = cv2.dilate(valley.astype(np.uint8), np.ones((3, 3), np.uint8))
+
+    cut = (skin & ~(valley > 0)).astype(np.uint8)
+    cut = cv2.morphologyEx(cut, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab, stats, cent = cv2.connectedComponentsWithStats(cut, 8)
+    if n < 3:                      # sem corte nao ha rosto a destacar
+        return MultiPolygon()
+
+    min_px = 1.5 / (mm_per_px ** 2)
+    cands = [i for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= min_px]
+    if not cands:
+        return MultiPolygon()
+    face_id = min(cands, key=lambda i: cent[i][1])   # menor y = mais alto
+
+    m = ((lab == face_id).astype(np.uint8)) * 255
+    # Devolve o rosto crescido ate a metade do vale, para o degrau nascer no
+    # meio da linha de sombra e nao deixar um degrau duplo.
+    m = cv2.dilate(m, np.ones((3, 3), np.uint8))
+    polys = mask_to_polygons(m, disc, mm_per_px)
+    return clean_for_print(polys, p, 1.0)
+
+
 def trace_artwork(image_path: str, p: Params,
                   exclude=None) -> dict[str, MultiPolygon]:
     """Devolve a arte vetorizada por cor, em mm, centrada na origem.
@@ -476,7 +526,11 @@ def trace_artwork(image_path: str, p: Params,
                     if q.intersection(exclude).area < 0.6 * q.area]
         art[name] = MultiPolygon(kept)
 
-    return _resolve_overlaps(art)
+    art = _resolve_overlaps(art)
+
+    # Sub-regiao (nao e uma cor): o rosto, que ganha um degrau a mais em Z.
+    art["_face"] = find_face(rgb, masks["skin"], disc, mm_per_px, p)
+    return art
 
 
 def _resolve_overlaps(art: dict[str, MultiPolygon]) -> dict[str, MultiPolygon]:

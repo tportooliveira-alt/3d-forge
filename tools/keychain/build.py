@@ -138,7 +138,8 @@ def build_slabs_mmu(p: Params, art: dict[str, MultiPolygon]) -> dict[str, list[S
     groove = _circle(p.groove_outer, p).difference(field)
     rim = _circle(p.radius, p).difference(_circle(p.groove_outer, p))
 
-    art_union = unary_union([g for g in art.values() if not g.is_empty])
+    art_union = unary_union([g for k, g in art.items()
+                             if not k.startswith("_") and not g.is_empty])
     field_purple = as_multipolygon(field.difference(art_union))
 
     slabs: dict[str, list[Slab]] = {c: [] for c in p.color_groups}
@@ -160,6 +161,12 @@ def build_slabs_mmu(p: Params, art: dict[str, MultiPolygon]) -> dict[str, list[S
         if geom.is_empty:
             continue
         slabs[color].append(Slab(geom, p.z_base_top, p.z_art_top))
+
+    # O rosto sobe um degrau a mais. Mesma cor da pele, so mais alto: e assim
+    # que o queixo ganha uma aresta e para de se fundir com o pescoco.
+    face = art.get("_face")
+    if face is not None and not face.is_empty and "skin" in slabs:
+        slabs["skin"].append(Slab(face, p.z_base_top, p.z_face_top))
 
     # No modo 4 cores o preto vira roxo, mas continua em relevo.
     if p.n_colors < 5:
@@ -185,7 +192,7 @@ def build_slabs_glue(p: Params, art: dict[str, MultiPolygon]
     # 1-3mm: imprimiveis num AMS, mas impossiveis de manusear e colar. Ficam em
     # relevo na propria base roxa.
     inserts = {c: art[c] for c in GLUE_INSERTS
-               if c in art and not art[c].is_empty}
+               if c in art and not art[c].is_empty}   # "_*" nunca esta aqui
     absorbed = unary_union([art[c] for c in GLUE_BASE_ABSORBS
                             if c in art and not art[c].is_empty])
 
@@ -206,6 +213,9 @@ def build_slabs_glue(p: Params, art: dict[str, MultiPolygon]
     ]
     if not absorbed.is_empty:
         purple.append(Slab(as_multipolygon(absorbed), p.z_base_top, p.z_art_top))
+        face = art.get("_face")
+        if face is not None and not face.is_empty:
+            purple.append(Slab(face, p.z_base_top, p.z_face_top))
 
     slabs: dict[str, list[Slab]] = {"purple": purple}
     for color, geom in inserts.items():

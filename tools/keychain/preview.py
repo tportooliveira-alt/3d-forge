@@ -72,3 +72,61 @@ def render(slabs: dict[str, list[Slab]], p: Params, out_path: str,
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
     return out_path
+
+
+# ---------------------------------------------------------------------------
+# Render do relevo: como a peca fica depois de impressa
+# ---------------------------------------------------------------------------
+def render_relief(slabs: dict[str, list[Slab]], p: Params, out_path: str,
+                  px_per_mm: float = 26.0, window=None) -> str:
+    """Rasteriza as camadas num mapa de altura e ilumina, como um hillshade.
+
+    E o unico jeito de conferir os DEGRAUS (o do queixo, o do aro) sem abrir um
+    visualizador 3D: a vista de topo achatada nao os mostra, porque cor e
+    altura sao coisas diferentes aqui.
+    """
+    import cv2
+
+    x0, x1, y0, y1 = window or (-p.radius - 1, p.radius + 1,
+                                -p.radius - 1, p.tab_hole_center_y +
+                                p.tab_boss_diameter / 2 + 1)
+    w = int((x1 - x0) * px_per_mm)
+    h = int((y1 - y0) * px_per_mm)
+    height = np.zeros((h, w), np.float32)
+    color = np.zeros((h, w, 3), np.float32)
+
+    def to_px(pts):
+        q = np.empty_like(pts)
+        q[:, 0] = (pts[:, 0] - x0) * px_per_mm
+        q[:, 1] = (y1 - pts[:, 1]) * px_per_mm       # Y da imagem cresce p/ baixo
+        return np.round(q).astype(np.int32)
+
+    flat = sorted(((s.z1, c, s) for c, items in slabs.items() for s in items),
+                  key=lambda t: t[0])
+    for _, cname, s in flat:
+        rgb = np.array(PALETTE.get(cname, (128, 128, 128)), np.float32) / 255.0
+        for poly in _iter_polygons(s.geom):
+            m = np.zeros((h, w), np.uint8)
+            cv2.fillPoly(m, [to_px(np.asarray(poly.exterior.coords))], 1)
+            for ring in poly.interiors:
+                cv2.fillPoly(m, [to_px(np.asarray(ring.coords))], 0)
+            sel = m > 0
+            if not sel.any():
+                continue
+            higher = sel & (s.z1 >= height)
+            height[higher] = s.z1
+            color[higher] = rgb
+
+    # Iluminacao: normal do mapa de altura, luz vinda do alto a esquerda.
+    hs = cv2.GaussianBlur(height, (0, 0), 1.1)
+    gx = cv2.Sobel(hs, cv2.CV_32F, 1, 0, ksize=3) * px_per_mm / 8.0
+    gy = cv2.Sobel(hs, cv2.CV_32F, 0, 1, ksize=3) * px_per_mm / 8.0
+    nz = 1.0 / np.sqrt(gx ** 2 + gy ** 2 + 1.0)
+    lx, ly, lz = -0.45, -0.55, 0.70
+    lam = np.clip((-gx * lx - gy * ly + lz) * nz, 0.0, 1.0)
+    shade = (0.38 + 0.62 * lam)[..., None]
+
+    img = np.clip(color * shade, 0, 1)
+    img[height <= 0] = 0.93                      # fundo
+    cv2.imwrite(out_path, (img[:, :, ::-1] * 255).astype(np.uint8))
+    return out_path
