@@ -290,7 +290,28 @@ def extrude_slabs(slabs: list[Slab]) -> trimesh.Trimesh:
     # alinhados ao eixo, empilhados). Sem ele, duas lajes que se tocam em z
     # ficam com arestas compartilhadas por 4 faces depois de soldar os
     # vertices, e a malha deixa de ser watertight.
-    return trimesh.boolean.union(parts, engine="manifold")
+    return _tidy(trimesh.boolean.union(parts, engine="manifold"))
+
+
+def _tidy(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Tira as faces de area zero que o booleano deixa para tras.
+
+    Elas nao mudam o volume, mas sobrevivem a exportacao e quebram a malha na
+    RELEITURA: glue_purple.stl saia com duas delas e voltava is_watertight=
+    False, embora o objeto em memoria parecesse integro. Um fatiador leria o
+    arquivo, nao o objeto em memoria.
+    """
+    out = mesh.copy()
+    out.merge_vertices()
+    keep = out.nondegenerate_faces(height=1e-9)
+    if keep.all():
+        return out
+    out.update_faces(keep)
+    out.remove_unreferenced_vertices()
+    # So aceita a limpeza se ela nao piorou nada.
+    if out.is_watertight and abs(out.volume - mesh.volume) < 1e-6:
+        return out
+    return mesh
 
 
 def build(p: Params, image_path: str, variant: str

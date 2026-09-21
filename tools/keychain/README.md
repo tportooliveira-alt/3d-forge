@@ -6,10 +6,31 @@ variantes que saem do **mesmo modelo paramétrico**.
 ```
 python3 -m venv tools/keychain/.venv
 tools/keychain/.venv/bin/pip install -r tools/keychain/requirements.txt
-tools/keychain/.venv/bin/python -m tools.keychain.cli --variant both --preview
+tools/keychain/.venv/bin/python -m tools.keychain.cli --variant both --check-slicer
 ```
 
 Saída em `tools/keychain/out/` (não versionada).
+
+**Abra o `.3mf`, não os STLs.** Cada variante gera um `mmu.3mf` / `glue.3mf`
+com todas as peças nomeadas e já na posição certa: o fatiador abre um arquivo
+só e você atribui o filamento de cada parte. Com STLs soltos você teria que
+importar cinco e torcer para o slicer não recentralizar nenhum. Os STLs
+continuam sendo gerados para quem precisar deles avulsos.
+
+`--check-slicer` roda a auditoria pesada (booleano 3D par a par). Ela é o que
+garante que o arquivo entra limpo:
+
+| Checagem | O que pega |
+|---|---|
+| `is_volume`, winding, faces degeneradas | malha que o fatiador rejeita ou fecha errado |
+| interseção 3D real entre cada par de cores | interpenetração — filamento disputando o mesmo espaço |
+| união == soma dos volumes | vão ou sobreposição em qualquer lugar, num número só |
+| cada ilha tem material abaixo | relevo flutuando no ar |
+
+Foi ela que pegou um defeito que passava despercebido: a base da variante
+colada saía com duas faces de área zero, sobreviviam à gravação e o arquivo
+voltava `is_watertight=False` na releitura — embora o objeto em memória
+parecesse íntegro. O fatiador lê o arquivo, não a memória.
 
 ---
 

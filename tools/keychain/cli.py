@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+
+import trimesh
 from pathlib import Path
 
 from .build import build
 from .params import Params
 from .preview import render
-from .validate import full_check
+from .validate import check_slicer_ready, full_check
 
 DEFAULT_IMAGE = "tools/keychain/assets/ref_hires.webp"
 DEFAULT_OUT = "tools/keychain/out"
@@ -29,6 +31,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--image", default=DEFAULT_IMAGE, help="render de referencia")
     ap.add_argument("--out", default=DEFAULT_OUT, help="diretorio de saida")
     ap.add_argument("--preview", action="store_true", help="gera PNG de conferencia")
+    ap.add_argument("--check-slicer", action="store_true",
+                    help="auditoria pesada de prontidao para fatiador "
+                         "(booleano 3D par a par)")
 
     g = ap.add_argument_group("geometria (mm)")
     g.add_argument("--diameter", type=float)
@@ -54,7 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run_variant(p: Params, image: str, variant: str, out: Path,
-                want_preview: bool) -> bool:
+                want_preview: bool, check_slicer: bool = False) -> bool:
     print(f"\n=== variante: {variant} ===")
     meshes, slabs = build(p, image, variant)
     rep = full_check(meshes, slabs, p)
@@ -79,10 +84,32 @@ def run_variant(p: Params, image: str, variant: str, out: Path,
         print(f"  -> STLs NAO exportados (variante {variant} reprovada no QA)")
         return False
 
+    if check_slicer:
+        errs, notes = check_slicer_ready(meshes)
+        for n in notes:
+            print(f"  fatiador: {n}")
+        for e in errs:
+            print(f"  ERRO fatiador: {e}")
+        if errs:
+            print(f"  -> {variant} reprovada na auditoria de fatiador")
+            return False
+        print("  fatiador: nenhuma interpenetracao, nenhum vao, nada flutuando")
+
     for name, mesh in sorted(meshes.items()):
         path = out / f"{variant}_{name}.stl"
         mesh.export(str(path))
         print(f"  gravado: {path}")
+
+    # 3MF unico com todas as pecas nomeadas: o fatiador abre um arquivo so, ja
+    # com as partes separadas e na posicao certa, e basta atribuir o filamento
+    # de cada uma. Com STL solto o usuario tem que importar cinco e confiar que
+    # o slicer nao vai recentralizar nenhum.
+    scene = trimesh.Scene()
+    for name, mesh in sorted(meshes.items()):
+        scene.add_geometry(mesh, geom_name=name, node_name=name)
+    path = out / f"{variant}.3mf"
+    scene.export(str(path))
+    print(f"  gravado: {path}   <- abra ESTE no fatiador")
     return True
 
 
@@ -92,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     overrides = {k: v for k, v in vars(args).items()
-                 if k not in {"variant", "image", "out", "preview"}}
+                 if k not in {"variant", "image", "out", "preview",
+                              "check_slicer"}}
     p = Params().with_overrides(**overrides)
 
     print(f"Q{p.diameter:.1f}mm | furo Q{p.hole_diameter:.1f}mm | "
@@ -100,7 +128,8 @@ def main(argv: list[str] | None = None) -> int:
           f"{p.n_colors} cores")
 
     variants = ["mmu", "glue"] if args.variant == "both" else [args.variant]
-    ok = all([run_variant(p, args.image, v, out, args.preview) for v in variants])
+    ok = all([run_variant(p, args.image, v, out, args.preview, args.check_slicer)
+              for v in variants])
     return 0 if ok else 1
 
 
