@@ -119,23 +119,30 @@ def artwork(p: Params, image_path: str) -> dict[str, MultiPolygon]:
 
 
 def _thicken_lines(black: MultiPolygon, p: Params) -> MultiPolygon:
-    """Leva a largura minima imprimivel os PEDACOS de preto que sao finos.
+    """Leva a largura minima imprimivel os pedacos de preto que sao finos.
 
     A decisao e por componente, nao por regiao: subtrair a abertura do proprio
     poligono marca como "fino" tambem a casca ondulada do contorno do cabelo, e
-    dilatar aquilo transformava o cabelo numa fieira de bolhas. Aqui, se um
+    dilatar aquilo transformava o cabelo numa fieira de bolhas. Se um
     componente inteiro some ao ser erodido em min_feature/2, ele e uma linha e
     cresce; se sobra miolo, e uma mancha e fica como esta.
+
+    O crescimento e o minimo necessario: a largura caracteristica da fita e
+    2*area/perimetro, e cresce-se so o que falta para chegar a min_feature. As
+    linhas do desenho tem 0.19-0.33mm, abaixo do que um bico de 0.4mm imprime;
+    ou elas engrossam, ou desaparecem da peca.
     """
     if black.is_empty:
         return black
     half = p.min_feature / 2.0
     out = []
     for q in _iter_polygons(black):
-        if q.buffer(-half, quad_segs=8).is_empty:
-            out.append(q.buffer(half * 0.85, quad_segs=8))
-        else:
+        if q.length <= 0 or not q.buffer(-half, quad_segs=8).is_empty:
             out.append(q)
+            continue
+        width = 2.0 * q.area / q.length
+        grow = max(0.0, (p.min_feature - width) / 2.0)
+        out.append(q.buffer(grow, quad_segs=12) if grow > 1e-4 else q)
     return as_multipolygon(unary_union(out))
 
 

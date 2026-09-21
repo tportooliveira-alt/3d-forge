@@ -42,7 +42,7 @@ MIN_AREA_MM2: dict[str, float] = {
     # O preto e cor ESTRUTURAL (cabelo + as linhas que separam manga, tronco e
     # perna). As linhas tem area pequena por natureza: um limiar alto aqui as
     # apagava e o lugar virava um buraco roxo no meio do quimono.
-    "hair": 0.45,
+    "hair": 0.12,
     "skin": 1.8,
     "pink": 2.0,
     "white": 1.2,

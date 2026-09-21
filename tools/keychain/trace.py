@@ -405,7 +405,8 @@ def _pick_hair(dark: list[Polygon], skin: MultiPolygon, p: Params) -> MultiPolyg
     return as_multipolygon(unary_union(keep))
 
 def clean_for_print(polys: list[Polygon], p: Params,
-                    min_area: float | None = None) -> MultiPolygon:
+                    min_area: float | None = None,
+                    open_factor: float = 1 / 3) -> MultiPolygon:
     """Simplifica, remove detalhe mais fino que o bico e descarta cacos."""
     if not polys:
         return MultiPolygon()
@@ -414,7 +415,11 @@ def clean_for_print(polys: list[Polygon], p: Params,
     # Abertura morfologica: apaga tudo que for mais estreito que min_feature.
     # Raio menor que min_feature/2: a abertura serve para matar filetes,
     # nao para arredondar a arte. min_feature continua valendo no QA.
-    r = p.min_feature / 3.0
+    # Com open_factor pequeno a abertura quase nao corta -- e o que o preto
+    # precisa, porque as linhas do desenho sao mais finas que o bico e quem as
+    # leva a largura imprimivel e build._thicken_lines, DEPOIS. Abrir antes
+    # simplesmente as apagava: 7.46mm2 de preto viravam 3.97mm2.
+    r = p.min_feature * open_factor
     geom = as_multipolygon(geom.buffer(-r, quad_segs=12).buffer(r * 1.02, quad_segs=12))
     if geom.is_empty:
         return MultiPolygon()
@@ -542,7 +547,11 @@ def trace_artwork(image_path: str, p: Params,
 
     art: dict[str, MultiPolygon] = {}
     for name, polys in raw.items():
-        cleaned = clean_for_print(polys, p, MIN_AREA_MM2.get(name))
+        if name == "hair":
+            cleaned = clean_for_print(polys, p, MIN_AREA_MM2.get(name),
+                                      open_factor=0.06)
+        else:
+            cleaned = clean_for_print(polys, p, MIN_AREA_MM2.get(name))
         # Refiltra DEPOIS do recorte: cortar no campo/zona de texto pode partir
         # um poligono valido em lascas minusculas.
         clipped = as_multipolygon(cleaned.intersection(field))
