@@ -13,3 +13,13 @@ outputs/
 midas_lib/
 hub/
 serviceAccountKey.json
+
+# Gerador de chaveiro
+tools/keychain/out/
+tools/keychain/.venv/
+tools/keychain/out50/
+
+# A pasta de entrega e versionada de proposito: e o que o usuario baixa.
+!entrega_chaveiro/
+!entrega_chaveiro/**
+entrega_chaveiro.zip
